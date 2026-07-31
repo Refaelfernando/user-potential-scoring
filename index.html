@@ -56,6 +56,29 @@
   footer{max-width:1180px;margin:0 auto;padding:0 20px 40px;font-size:11px;color:var(--muted);line-height:1.6;}
   .foot-panel{background:#fff;border-radius:10px;padding:16px 20px;margin-top:18px;box-shadow:0 1px 3px rgba(20,30,45,.08);}
   code{background:#F0F2F5;padding:1px 5px;border-radius:4px;}
+  .analysis-panel{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(20,30,45,.08);padding:22px 24px;margin-top:18px;}
+  .analysis-panel h2{font-size:16px;margin:0 0 4px;}
+  .analysis-panel .lead{font-size:12px;color:var(--muted);margin-bottom:18px;}
+  .analysis-sub{margin-top:22px;}
+  .analysis-sub h3{font-size:13px;margin:0 0 8px;color:var(--navy-light);text-transform:uppercase;letter-spacing:.4px;}
+  .stat-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px;}
+  .stat-table th{text-align:left;background:#FAFBFC;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;padding:8px 12px;border-bottom:1px solid var(--line);}
+  .stat-table td{padding:8px 12px;border-bottom:1px solid #F0F2F5;}
+  .sig-yes{color:var(--high);font-weight:700;}
+  .sig-no{color:var(--muted);font-weight:700;}
+  .insight-box{background:#F0F5FA;border-left:3px solid var(--navy-light);padding:10px 14px;font-size:13px;border-radius:0 6px 6px 0;margin:10px 0;}
+  .reco-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:8px;}
+  .reco-card{border-radius:8px;padding:14px 16px;font-size:12.5px;line-height:1.5;}
+  .reco-card.High{background:var(--high-bg);}
+  .reco-card.Medium{background:var(--med-bg);}
+  .reco-card.Low{background:var(--low-bg);}
+  .reco-card b{display:block;font-size:13px;margin-bottom:6px;}
+  .reco-card .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(0,0,0,.08);margin-bottom:6px;}
+  .method-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;}
+  .method-box{background:#FAFBFC;border:1px solid var(--line);border-radius:8px;padding:12px 14px;}
+  .method-box .num{font-size:22px;font-weight:800;color:var(--navy-light);}
+  .method-box .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px;}
+  .method-box .desc{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.4;}
 </style>
 </head>
 <body>
@@ -63,7 +86,7 @@
 <header>
   <div>
     <h1>User Potential Scoring — "Created"</h1>
-    <div class="sub">Segmentasi propensity user berdasarkan cohort recency &amp; engagement (live dari Google Sheet)</div>
+    <div class="sub">Segmentasi propensity user berdasarkan cohort recency &amp; engagement (live dari Google Sheet, auto-refresh tiap 5 menit)</div>
   </div>
   <div class="status" id="statusBox">
     <div>Terakhir sync: <b id="lastSync">—</b></div>
@@ -112,11 +135,54 @@
     </div>
   </div>
 
+  <div class="analysis-panel">
+    <h2>📊 Analisa Statistik &amp; Rekomendasi CRM</h2>
+    <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet setiap dashboard refresh — bukan teks statis.</div>
+
+    <div class="analysis-sub">
+      <h3>Metode &amp; Tingkat Keberhasilan Model</h3>
+      <div class="method-grid" id="methodGrid">
+        <div class="method-box">
+          <div class="num">WOE + Logistic Regression</div>
+          <div class="lbl">Metode Scoring</div>
+          <div class="desc">Standar industri untuk propensity/credit scoring pada target biner langka (rare event). Dipilih karena tahan terhadap data hilang, hasilnya mudah dijelaskan ke bisnis (per-poin), dan terbukti stabil di data besar (100rb+ baris).</div>
+        </div>
+        <div class="method-box">
+          <div class="num">84%</div>
+          <div class="lbl">AUC (holdout test 30%)</div>
+          <div class="desc">Peluang model menyusun urutan skor dengan benar (user yang beneran convert diberi skor lebih tinggi dari yang tidak). &gt;80% = sangat kuat secara statistik.</div>
+        </div>
+        <div class="method-box">
+          <div class="num">0,54</div>
+          <div class="lbl">KS Statistic</div>
+          <div class="desc">Seberapa jauh model memisahkan converter vs non-converter. &gt;0,4 = daya pisah kuat, layak dipakai buat prioritas targeting.</div>
+        </div>
+      </div>
+      <div class="insight-box">Kedua angka ini didapat dari training model sekali di awal (fixed weights), <b>bukan</b> dihitung ulang tiap refresh — akan diupdate manual saat model di-retrain (lihat catatan retrain di bagian metodologi bawah).</div>
+    </div>
+
+    <div class="analysis-sub">
+      <h3>Uji Signifikansi Tahap Funnel WhatsApp (dinamis, live)</h3>
+      <table class="stat-table" id="funnelStatsTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
+      <div id="funnelInsight" class="insight-box">Menghitung insight...</div>
+    </div>
+
+    <div class="analysis-sub">
+      <h3>Profil Tier &amp; Perkiraan Volume Konversi (dinamis, live)</h3>
+      <table class="stat-table" id="tierProfileTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
+    </div>
+
+    <div class="analysis-sub">
+      <h3>Rekomendasi Aksi CRM per Tier (dinamis, live)</h3>
+      <div class="reco-grid" id="recoGrid"></div>
+    </div>
+  </div>
+
   <div class="foot-panel">
     <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 (AUC 0.84, KS 0.54).
     Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
     Skor dihitung ulang otomatis setiap dashboard dibuka, mengikuti data terbaru di Google Sheet — bobot model bersifat tetap (tidak retrain otomatis) supaya hasil konsisten &amp; mudah diaudit; retrain manual direkomendasikan tiap kuartal atau saat tim data mengonfirmasi data baru (mis. OCS Score yang sudah dibersihkan) siap dipakai.
-    User dengan flag <code>Dont Touch!</code> otomatis dikecualikan dari scoring.
+    User dengan flag <code>Dont Touch!</code> otomatis dikecualikan dari scoring. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
   </div>
 
 </main>
@@ -131,6 +197,26 @@
 const SHEET_ID = "1TCFGgF8UjzLwcA9Oq9veaYXNTFejwU1PS1k08kG6gGo";
 const SHEET_NAME = "lending vw_experiment_paid_reje"; // nama tab di Google Sheet
 const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+const AUTO_REFRESH_MINUTES = 5; // sama seperti CRM Dashboard - auto re-fetch berkala tanpa perlu reload manual
+
+/* ============== STATISTIK: two-proportion z-test ============== */
+function erf(x){
+  const sign = x < 0 ? -1 : 1; x = Math.abs(x);
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const t = 1/(1+p*x);
+  const y = 1 - (((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+  return sign*y;
+}
+function normCDF(x){ return 0.5*(1+erf(x/Math.sqrt(2))); }
+function twoPropZTest(x1,n1,x2,n2){
+  if(n1===0 || n2===0) return {p1:n1?x1/n1:0, p2:n2?x2/n2:0, z:NaN, pVal:NaN};
+  const p1=x1/n1, p2=x2/n2;
+  const pooled=(x1+x2)/(n1+n2);
+  const se=Math.sqrt(pooled*(1-pooled)*(1/n1+1/n2)) || 1e-9;
+  const z=(p1-p2)/se;
+  const pVal=2*(1-normCDF(Math.abs(z)));
+  return {p1,p2,z,pVal};
+}
 
 /* ============== MODEL (WOE + Logistic Regression, fixed weights) ============== */
 const WOE_SEG = {">M4": 0.31717, "M0": 0.687949, "M1": -2.096653, "M2": -2.124888, "M3": -1.48922};
@@ -172,6 +258,8 @@ function scoreRow(days, sent, delivered, read){
 let DATA = []; // scored, eligible rows
 let excludedCount = 0;
 let activeTier = null;
+let FUNNEL = {}; // stage -> {n, events} based on Jun (periode lengkap terakhir) untuk uji signifikansi
+let TIER_STATS = {}; // tier -> {n, sumProb}
 
 async function loadData(){
   const body = document.getElementById('panelBody');
@@ -184,6 +272,8 @@ async function loadData(){
 
     DATA = [];
     excludedCount = 0;
+    FUNNEL = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
+    TIER_STATS = {High:{n:0,sumProb:0}, Medium:{n:0,sumProb:0}, Low:{n:0,sumProb:0}};
 
     // Struktur sheet asli "lending vw_experiment_paid_reje":
     // Cust ID, Paidback Date, OCS Score, Date, Year, Now, Segment, Sent Jul, Delivered Jul,
@@ -192,6 +282,8 @@ async function loadData(){
     // "Segment" (M0-M4) dipakai langsung dari sheet (sudah dihitung dari Paidback Date saat
     // data di-export) — akan otomatis ikut ter-update selama sheet ini di-refresh berkala
     // dengan data export terbaru. Engagement "current period" pakai kolom *Jul (periode berjalan).
+    // Kolom *Jun (periode lengkap terakhir, ada label "Created") dipakai khusus untuk uji
+    // signifikansi statistik funnel di bawah - BUKAN untuk skor (skor pakai *Jul).
     rows.forEach(r => {
       const custId = (r["Cust ID"]||"").toString().trim();
       if(!custId) return;
@@ -216,9 +308,21 @@ async function loadData(){
       else if(p >= TIER_CUTOFF_MED) tier = "Medium";
 
       DATA.push({custId, seg, eng, prob: p, tier});
+      TIER_STATS[tier].n++;
+      TIER_STATS[tier].sumProb += p;
+
+      // funnel stats pakai Jun (periode lengkap, ada outcome Created Jun yang sudah final)
+      const sentJun = parseInt(r["Sent Jun"]) || 0;
+      const deliveredJun = parseInt(r["Delivered Jun"]) || 0;
+      const readJun = parseInt(r["Read Jun"]) || 0;
+      const createdJun = (parseInt(r["Created Jun"]) || 0) > 0 ? 1 : 0;
+      const engJun = engagementStage(sentJun, deliveredJun, readJun);
+      FUNNEL[engJun].n++;
+      FUNNEL[engJun].events += createdJun;
     });
 
     renderSummary();
+    renderAnalysis();
     populateCohortFilter();
     document.getElementById('lastSync').textContent = new Date().toLocaleString('id-ID');
   }catch(e){
@@ -241,6 +345,78 @@ function renderSummary(){
   document.getElementById('rateHigh').textContent = `Conversion rate historis: ~${(REF_RATE.High*100).toFixed(1)}%`;
   document.getElementById('rateMedium').textContent = `Conversion rate historis: ~${(REF_RATE.Medium*100).toFixed(1)}%`;
   document.getElementById('rateLow').textContent = `Conversion rate historis: ~${(REF_RATE.Low*100).toFixed(1)}%`;
+}
+
+function fmtPct(x, d=2){ return (x*100).toFixed(d) + "%"; }
+
+function renderAnalysis(){
+  /* ---- 1. Uji signifikansi funnel (Sent->Delivered, Delivered->Read) ---- */
+  const sd = twoPropZTest(FUNNEL.Sent.events, FUNNEL.Sent.n, FUNNEL.Delivered.events, FUNNEL.Delivered.n);
+  const dr = twoPropZTest(FUNNEL.Delivered.events, FUNNEL.Delivered.n, FUNNEL.Read.events, FUNNEL.Read.n);
+
+  const rowsHtml = [
+    ["Sent → Delivered", FUNNEL.Sent, FUNNEL.Delivered, sd],
+    ["Delivered → Read", FUNNEL.Delivered, FUNNEL.Read, dr],
+  ].map(([label, g1, g2, t]) => {
+    const sig = !isNaN(t.pVal) && t.pVal < 0.05;
+    const sigTxt = isNaN(t.pVal) ? '<span class="sig-no">data kurang</span>' : (sig ? '<span class="sig-yes">Ya, signifikan</span>' : '<span class="sig-no">Tidak signifikan</span>');
+    return `<tr><td>${label}</td><td>${fmtPct(t.p1)} (n=${g1.n.toLocaleString('id-ID')})</td>
+      <td>${fmtPct(t.p2)} (n=${g2.n.toLocaleString('id-ID')})</td>
+      <td>z=${isNaN(t.z)?'—':t.z.toFixed(2)}, p=${isNaN(t.pVal)?'—':t.pVal.toFixed(4)}</td>
+      <td>${sigTxt}</td></tr>`;
+  }).join('');
+  document.getElementById('funnelStatsTable').innerHTML = `<thead><tr>
+    <th>Tahap</th><th>Conversion Rate Tahap 1</th><th>Conversion Rate Tahap 2</th><th>Uji Statistik (two-proportion z-test)</th><th>Signifikan? (α=0.05)</th>
+  </tr></thead><tbody>${rowsHtml}</tbody>`;
+
+  const drSig = !isNaN(dr.pVal) && dr.pVal < 0.05;
+  const sdSig = !isNaN(sd.pVal) && sd.pVal < 0.05;
+  let insight;
+  if(!drSig){
+    insight = `<b>Insight:</b> Membaca pesan (Read) <b>tidak</b> menambah peluang "Created" secara signifikan dibanding sekadar delivered (${fmtPct(dr.p1)} vs ${fmtPct(dr.p2)}, p=${dr.pVal.toFixed(3)}).
+      Bottleneck utama ada di <b>deliverability</b>, bukan konten pesan — prioritaskan audit kualitas nomor, sending window, dan reputasi sender WA, bukan redesign copywriting.`;
+  } else if(dr.p2 > dr.p1) {
+    insight = `<b>Insight:</b> Membaca pesan (Read) secara signifikan menaikkan peluang "Created" dibanding sekadar delivered (${fmtPct(dr.p1)} vs ${fmtPct(dr.p2)}, p=${dr.pVal.toFixed(3)}).
+      Di sini konten/copywriting pesan layak diinvestasikan — dorong open/read rate lewat A/B testing isi pesan.`;
+  } else {
+    insight = `<b>Insight:</b> Terdeteksi perbedaan signifikan tapi arahnya terbalik (Read < Delivered) — perlu dicek manual, kemungkinan ada anomali data.`;
+  }
+  if(sdSig){
+    insight += ` Sementara itu, lompatan dari Sent ke Delivered sangat signifikan (${fmtPct(sd.p1)} → ${fmtPct(sd.p2)}, p=${sd.pVal < 0.001 ? '<0.001' : sd.pVal.toFixed(3)}) — jelas menunjukkan delivery adalah gerbang utama funnel ini.`;
+  }
+  document.getElementById('funnelInsight').innerHTML = insight;
+
+  /* ---- 2. Profil tier & expected conversion ---- */
+  const tierOrder = ["High","Medium","Low"];
+  let maxTier = tierOrder[0], maxExpected = -1;
+  const tierRows = tierOrder.map(t=>{
+    const s = TIER_STATS[t];
+    const avgProb = s.n ? s.sumProb/s.n : 0;
+    const expected = s.sumProb; // sum of individual probabilities = expected count
+    if(expected > maxExpected){ maxExpected = expected; maxTier = t; }
+    return {tier:t, n:s.n, avgProb, expected};
+  });
+  document.getElementById('tierProfileTable').innerHTML = `<thead><tr>
+      <th>Tier</th><th>Jumlah User</th><th>% Populasi</th><th>Avg. Propensity Score</th><th>Perkiraan Total Konversi</th>
+    </tr></thead><tbody>${tierRows.map(r=>{
+      const totalN = tierRows.reduce((a,b)=>a+b.n,0) || 1;
+      const highlight = r.tier===maxTier ? ' style="font-weight:700;"' : '';
+      return `<tr${highlight}><td><span class="tier-pill ${r.tier}">${r.tier}</span></td><td>${r.n.toLocaleString('id-ID')}</td>
+        <td>${fmtPct(r.n/totalN,1)}</td><td>${fmtPct(r.avgProb)}</td><td>~${Math.round(r.expected).toLocaleString('id-ID')}${r.tier===maxTier?' ⭐':''}</td></tr>`;
+    }).join('')}</tbody>`;
+
+  /* ---- 3. Rekomendasi dinamis per tier ---- */
+  const focusText = drSig ? "konten & copywriting pesan (dorong read rate)" : "deliverability (kualitas nomor, sending window, reputasi sender)";
+  const recos = {
+    High: `<div class="badge">Maintain</div><b>High Potential</b>
+      Sudah convert baik secara natural (avg. ${fmtPct(tierRows.find(r=>r.tier==='High').avgProb)}). Jangan tambah frekuensi kontak (risiko fatigue) — cukup pertahankan cadence saat ini, opsional tambah personalisasi/high-touch karena size-nya kecil dan cost per-user masih terjangkau.`,
+    Medium: `<div class="badge">${maxTier==='Medium' ? 'Prioritas Utama ⭐' : 'Prioritas'}</div><b>Medium Potential</b>
+      ${maxTier==='Medium' ? 'Kontributor perkiraan total konversi TERBESAR' : 'Kontributor volume signifikan'} berkat ukuran populasinya (${tierRows.find(r=>r.tier==='Medium').n.toLocaleString('id-ID')} user).
+      Fokus perbaikan: <b>${focusText}</b>. Ini kolam paling layak dapat tambahan budget/effort karena headroom-nya paling besar.`,
+    Low: `<div class="badge">Deprioritaskan</div><b>Low Potential</b>
+      Conversion rate rendah (avg. ${fmtPct(tierRows.find(r=>r.tier==='Low').avgProb)}). Turunkan frekuensi/prioritas kirim WA personal ke sini — alihkan ke channel biaya lebih rendah (broadcast massal) atau batasi jadi 1x touch per siklus.`
+  };
+  document.getElementById('recoGrid').innerHTML = tierOrder.map(t=>`<div class="reco-card ${t}">${recos[t]}</div>`).join('');
 }
 
 function populateCohortFilter(){
@@ -327,6 +503,12 @@ async function manualRefresh(){
 }
 
 loadData();
+// Auto-refresh berkala (sama seperti CRM Dashboard) - fetch ulang tanpa perlu aksi manual dari user
+setInterval(async ()=>{
+  await loadData();
+  if(activeTier) renderTable();
+}, AUTO_REFRESH_MINUTES * 60 * 1000);
+
 </script>
 </body>
 </html>
