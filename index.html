@@ -101,7 +101,7 @@
     <div class="card total">
       <div class="label">Total Eligible</div>
       <div class="count" id="cntTotal">—</div>
-      <div class="rate" id="cntExcluded">— dikecualikan (Dont Touch!)</div>
+      <div class="rate" id="cntExcluded">Memuat...</div>
     </div>
     <div class="card high" data-tier="High" onclick="selectTier('High')">
       <div class="label"><span class="swatch"></span>High Potential</div>
@@ -148,17 +148,17 @@
           <div class="desc">Standar industri untuk propensity/credit scoring pada target biner langka (rare event). Dipilih karena tahan terhadap data hilang, hasilnya mudah dijelaskan ke bisnis (per-poin), dan terbukti stabil di data besar (100rb+ baris).</div>
         </div>
         <div class="method-box">
-          <div class="num">84%</div>
-          <div class="lbl">AUC (holdout test 30%)</div>
-          <div class="desc">Peluang model menyusun urutan skor dengan benar (user yang beneran convert diberi skor lebih tinggi dari yang tidak). &gt;80% = sangat kuat secara statistik.</div>
+          <div class="num" id="aucBox">—</div>
+          <div class="lbl">AUC (live, validasi ulang tiap refresh)</div>
+          <div class="desc">Peluang model menyusun urutan skor dengan benar (user yang beneran convert diberi skor lebih tinggi dari yang tidak), diuji ulang terhadap outcome Created Jun terbaru. &gt;80% = sangat kuat secara statistik.</div>
         </div>
         <div class="method-box">
-          <div class="num">0,54</div>
-          <div class="lbl">KS Statistic</div>
-          <div class="desc">Seberapa jauh model memisahkan converter vs non-converter. &gt;0,4 = daya pisah kuat, layak dipakai buat prioritas targeting.</div>
+          <div class="num" id="ksBox">—</div>
+          <div class="lbl">KS Statistic (live, validasi ulang tiap refresh)</div>
+          <div class="desc">Seberapa jauh model memisahkan converter vs non-converter, dihitung ulang dari data terbaru. &gt;0,4 = daya pisah kuat, layak dipakai buat prioritas targeting.</div>
         </div>
       </div>
-      <div class="insight-box">Kedua angka ini didapat dari training model sekali di awal (fixed weights), <b>bukan</b> dihitung ulang tiap refresh — akan diupdate manual saat model di-retrain (lihat catatan retrain di bagian metodologi bawah).</div>
+      <div class="insight-box">Bobot model (WOE &amp; koefisien) <b>tetap</b> — yang dihitung ulang tiap refresh cuma seberapa akurat bobot itu kalau diuji ke data terbaru. Kalau AUC/KS turun signifikan dari waktu ke waktu, itu sinyal model perlu di-retrain manual (lihat catatan retrain di metodologi bawah).</div>
     </div>
 
     <div class="analysis-sub">
@@ -175,6 +175,7 @@
     <div class="analysis-sub">
       <h3>Rekomendasi Aksi CRM per Tier (dinamis, live)</h3>
       <div class="reco-grid" id="recoGrid"></div>
+      <div class="insight-box" style="margin-top:14px;">Angka "baseline kirim saat ini" dihitung langsung dari data (rata-rata Sent Jul per user ÷ estimasi minggu berjalan). Angka "rekomendasi frekuensi" adalah <b>kombinasi baseline itu + kaidah umum anti-fatigue campaign</b> (bukan murni hasil statistik) — sebaiknya divalidasi lewat A/B test kecil sebelum diterapkan penuh, terutama di Medium tier.</div>
     </div>
   </div>
 
@@ -182,7 +183,7 @@
     <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 (AUC 0.84, KS 0.54).
     Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
     Skor dihitung ulang otomatis setiap dashboard dibuka, mengikuti data terbaru di Google Sheet — bobot model bersifat tetap (tidak retrain otomatis) supaya hasil konsisten &amp; mudah diaudit; retrain manual direkomendasikan tiap kuartal atau saat tim data mengonfirmasi data baru (mis. OCS Score yang sudah dibersihkan) siap dipakai.
-    User dengan flag <code>Dont Touch!</code> otomatis dikecualikan dari scoring. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
+    User dengan flag khusus di kolom <code>Noted</code> (mis. "Dont Touch!") otomatis dikecualikan dari scoring kalau kolom itu ada di sheet — saat ini kolom Noted sudah dihapus dari sheet sehingga tidak ada user yang dikecualikan. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
   </div>
 
 </main>
@@ -259,7 +260,9 @@ let DATA = []; // scored, eligible rows
 let excludedCount = 0;
 let activeTier = null;
 let FUNNEL = {}; // stage -> {n, events} based on Jun (periode lengkap terakhir) untuk uji signifikansi
-let TIER_STATS = {}; // tier -> {n, sumProb}
+let TIER_STATS = {}; // tier -> {n, sumProb, sumSentJul}
+let COMBO_JUN = {}; // "seg|engJun" -> {prob, pos, neg} - untuk validasi AUC/KS live (model TETAP, cuma diuji ulang)
+let SNAPSHOT_DAY_OF_MONTH = null; // dari kolom Date, dipakai estimasi frekuensi kirim/minggu
 
 async function loadData(){
   const body = document.getElementById('panelBody');
@@ -273,7 +276,9 @@ async function loadData(){
     DATA = [];
     excludedCount = 0;
     FUNNEL = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
-    TIER_STATS = {High:{n:0,sumProb:0}, Medium:{n:0,sumProb:0}, Low:{n:0,sumProb:0}};
+    TIER_STATS = {High:{n:0,sumProb:0,sumSentJul:0}, Medium:{n:0,sumProb:0,sumSentJul:0}, Low:{n:0,sumProb:0,sumSentJul:0}};
+    COMBO_JUN = {};
+    SNAPSHOT_DAY_OF_MONTH = null;
 
     // Struktur sheet asli "lending vw_experiment_paid_reje":
     // Cust ID, Paidback Date, OCS Score, Date, Year, Now, Segment, Sent Jul, Delivered Jul,
@@ -310,6 +315,13 @@ async function loadData(){
       DATA.push({custId, seg, eng, prob: p, tier});
       TIER_STATS[tier].n++;
       TIER_STATS[tier].sumProb += p;
+      TIER_STATS[tier].sumSentJul += sent;
+
+      if(SNAPSHOT_DAY_OF_MONTH === null){
+        const dstr = (r["Date"]||"").toString().trim();
+        const d = dstr ? new Date(dstr) : null;
+        if(d && !isNaN(d)) SNAPSHOT_DAY_OF_MONTH = d.getDate();
+      }
 
       // funnel stats pakai Jun (periode lengkap, ada outcome Created Jun yang sudah final)
       const sentJun = parseInt(r["Sent Jun"]) || 0;
@@ -319,6 +331,15 @@ async function loadData(){
       const engJun = engagementStage(sentJun, deliveredJun, readJun);
       FUNNEL[engJun].n++;
       FUNNEL[engJun].events += createdJun;
+
+      // Validasi live model TETAP (fixed weights) terhadap outcome Jun aktual - bukan retrain,
+      // cuma re-test seberapa bagus model yang sama pada data terbaru (AUC/KS dinamis)
+      const woeEJun = WOE_ENG[engJun] ?? 0;
+      const zJun = INTERCEPT + COEF.seg*woeS + COEF.eng*woeEJun;
+      const probJun = sigmoid(zJun);
+      const comboKey = seg + "|" + engJun;
+      if(!COMBO_JUN[comboKey]) COMBO_JUN[comboKey] = {prob: probJun, pos:0, neg:0};
+      if(createdJun) COMBO_JUN[comboKey].pos++; else COMBO_JUN[comboKey].neg++;
     });
 
     renderSummary();
@@ -338,7 +359,7 @@ function renderSummary(){
   const med = DATA.filter(d=>d.tier==="Medium").length;
   const low = DATA.filter(d=>d.tier==="Low").length;
   document.getElementById('cntTotal').textContent = total.toLocaleString('id-ID');
-  document.getElementById('cntExcluded').textContent = excludedCount.toLocaleString('id-ID') + " dikecualikan (Dont Touch!)";
+  document.getElementById('cntExcluded').textContent = excludedCount>0 ? (excludedCount.toLocaleString('id-ID') + " dikecualikan (flag Noted)") : "Tidak ada user dikecualikan";
   document.getElementById('cntHigh').textContent = high.toLocaleString('id-ID');
   document.getElementById('cntMedium').textContent = med.toLocaleString('id-ID');
   document.getElementById('cntLow').textContent = low.toLocaleString('id-ID');
@@ -349,7 +370,35 @@ function renderSummary(){
 
 function fmtPct(x, d=2){ return (x*100).toFixed(d) + "%"; }
 
+function computeLiveAucKs(){
+  // Combo-based ROC: tiap kombinasi Segment x Engagement_Jun = satu "titik threshold"
+  // (bukan retrain - cuma nguji ulang bobot yang SAMA ke outcome Created Jun terbaru)
+  const combos = Object.values(COMBO_JUN).sort((a,b)=>b.prob-a.prob);
+  const totalPos = combos.reduce((s,c)=>s+c.pos,0);
+  const totalNeg = combos.reduce((s,c)=>s+c.neg,0);
+  if(totalPos===0 || totalNeg===0) return {auc:null, ks:null};
+  let cumPos=0, cumNeg=0, ks=0;
+  let points=[{fpr:0,tpr:0}];
+  combos.forEach(c=>{
+    cumPos+=c.pos; cumNeg+=c.neg;
+    const tpr=cumPos/totalPos, fpr=cumNeg/totalNeg;
+    ks = Math.max(ks, tpr-fpr);
+    points.push({fpr,tpr});
+  });
+  let auc=0;
+  for(let i=1;i<points.length;i++){
+    const dx = points[i].fpr - points[i-1].fpr;
+    auc += dx*(points[i].tpr+points[i-1].tpr)/2;
+  }
+  return {auc, ks};
+}
+
 function renderAnalysis(){
+  /* ---- 0. Validasi live model (fixed weights, diuji ulang ke data terbaru) ---- */
+  const {auc, ks} = computeLiveAucKs();
+  document.getElementById('aucBox').textContent = auc===null ? 'n/a' : fmtPct(auc, 1);
+  document.getElementById('ksBox').textContent = ks===null ? 'n/a' : ks.toFixed(2);
+
   /* ---- 1. Uji signifikansi funnel (Sent->Delivered, Delivered->Read) ---- */
   const sd = twoPropZTest(FUNNEL.Sent.events, FUNNEL.Sent.n, FUNNEL.Delivered.events, FUNNEL.Delivered.n);
   const dr = twoPropZTest(FUNNEL.Delivered.events, FUNNEL.Delivered.n, FUNNEL.Read.events, FUNNEL.Read.n);
@@ -405,16 +454,28 @@ function renderAnalysis(){
         <td>${fmtPct(r.n/totalN,1)}</td><td>${fmtPct(r.avgProb)}</td><td>~${Math.round(r.expected).toLocaleString('id-ID')}${r.tier===maxTier?' ⭐':''}</td></tr>`;
     }).join('')}</tbody>`;
 
-  /* ---- 3. Rekomendasi dinamis per tier ---- */
+  /* ---- 3. Rekomendasi dinamis per tier (termasuk frekuensi kontak/minggu) ---- */
+  const weeksElapsed = Math.max(SNAPSHOT_DAY_OF_MONTH || 21, 1) / 7; // estimasi minggu berjalan di periode Jul
+  function weeklyFreq(tier){
+    const s = TIER_STATS[tier];
+    if(!s.n) return 0;
+    return (s.sumSentJul / s.n) / weeksElapsed;
+  }
+  const freqHigh = weeklyFreq('High');
+  const freqMedium = weeklyFreq('Medium');
+  const freqLow = weeklyFreq('Low');
+
   const focusText = drSig ? "konten & copywriting pesan (dorong read rate)" : "deliverability (kualitas nomor, sending window, reputasi sender)";
   const recos = {
     High: `<div class="badge">Maintain</div><b>High Potential</b>
-      Sudah convert baik secara natural (avg. ${fmtPct(tierRows.find(r=>r.tier==='High').avgProb)}). Jangan tambah frekuensi kontak (risiko fatigue) — cukup pertahankan cadence saat ini, opsional tambah personalisasi/high-touch karena size-nya kecil dan cost per-user masih terjangkau.`,
+      Sudah convert baik secara natural (avg. ${fmtPct(tierRows.find(r=>r.tier==='High').avgProb)}). Baseline kirim saat ini ~${freqHigh.toFixed(1)}x/minggu per user.
+      <b>Rekomendasi frekuensi: pertahankan di ~1-2x/minggu, jangan lebih</b> — jangan tambah frekuensi kontak, risiko fatigue/unsubscribe karena segmen ini sudah punya intent tinggi tanpa perlu didorong lebih. Opsional tambah personalisasi/high-touch (bukan tambah volume) karena size-nya kecil dan cost per-user masih terjangkau.`,
     Medium: `<div class="badge">${maxTier==='Medium' ? 'Prioritas Utama ⭐' : 'Prioritas'}</div><b>Medium Potential</b>
-      ${maxTier==='Medium' ? 'Kontributor perkiraan total konversi TERBESAR' : 'Kontributor volume signifikan'} berkat ukuran populasinya (${tierRows.find(r=>r.tier==='Medium').n.toLocaleString('id-ID')} user).
-      Fokus perbaikan: <b>${focusText}</b>. Ini kolam paling layak dapat tambahan budget/effort karena headroom-nya paling besar.`,
+      ${maxTier==='Medium' ? 'Kontributor perkiraan total konversi TERBESAR' : 'Kontributor volume signifikan'} berkat ukuran populasinya (${tierRows.find(r=>r.tier==='Medium').n.toLocaleString('id-ID')} user). Baseline kirim saat ini ~${freqMedium.toFixed(1)}x/minggu per user.
+      Fokus perbaikan: <b>${focusText}</b>. <b>Rekomendasi frekuensi: naikkan jadi ~2-3x/minggu</b> (retry terjadwal, jeda min. 1 hari antar percobaan) — bukan nambah pesan baru, tapi nambah PELUANG delivered lewat percobaan ulang di jam/hari berbeda. Ini kolam paling layak dapat tambahan budget/effort karena headroom-nya paling besar.`,
     Low: `<div class="badge">Deprioritaskan</div><b>Low Potential</b>
-      Conversion rate rendah (avg. ${fmtPct(tierRows.find(r=>r.tier==='Low').avgProb)}). Turunkan frekuensi/prioritas kirim WA personal ke sini — alihkan ke channel biaya lebih rendah (broadcast massal) atau batasi jadi 1x touch per siklus.`
+      Conversion rate rendah (avg. ${fmtPct(tierRows.find(r=>r.tier==='Low').avgProb)}). Baseline kirim saat ini ~${freqLow.toFixed(1)}x/minggu per user.
+      <b>Rekomendasi frekuensi: turunkan ke maksimal 1x/minggu</b> (atau geser ke broadcast massal biaya rendah, bukan WA personal) — cost per-kontak di sini gak sebanding dengan peluang convert yang sangat kecil.`
   };
   document.getElementById('recoGrid').innerHTML = tierOrder.map(t=>`<div class="reco-card ${t}">${recos[t]}</div>`).join('');
 }
