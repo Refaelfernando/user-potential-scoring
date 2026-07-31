@@ -119,6 +119,55 @@
 
 <main>
 
+  <div class="analysis-panel">
+    <h2>🎯 Segmen Mana yang Harus Dikejar?</h2>
+    <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet — baca dulu bagian ini, lalu scroll ke bawah buat ambil daftar User ID-nya.</div>
+
+    <div class="analysis-sub">
+      <div class="priority-grid" id="priorityGrid"></div>
+    </div>
+
+    <div class="analysis-sub">
+      <h3>Rekomendasi Aksi &amp; Frekuensi Kontak per Segmen</h3>
+      <table class="action-table" id="actionTable"><tbody><tr><td>Menghitung...</td></tr></tbody></table>
+    </div>
+
+    <details class="tech-details">
+      <summary>Lihat bukti statistik &amp; metodologi (untuk audit / validasi teknis)</summary>
+      <div class="tech-body">
+        <h3 style="margin-top:0;">Status Training Model</h3>
+        <div class="insight-box" id="trainingStatusBox">Menghitung...</div>
+
+        <h3>Metode &amp; Tingkat Keberhasilan Model</h3>
+        <div class="method-grid" id="methodGrid">
+          <div class="method-box">
+            <div class="num" style="font-size:14px;">WOE + Logistic Regression</div>
+            <div class="lbl">Metode Scoring</div>
+            <div class="desc">Standar industri credit/propensity scoring untuk target biner langka. Tahan data hilang &amp; mudah dijelaskan ke bisnis.</div>
+          </div>
+          <div class="method-box">
+            <div class="num" id="aucBox">—</div>
+            <div class="lbl">AUC (live)</div>
+            <div class="desc">Akurasi urutan skor model. &gt;80% = sangat kuat.</div>
+          </div>
+          <div class="method-box">
+            <div class="num" id="ksBox">—</div>
+            <div class="lbl">KS Statistic (live)</div>
+            <div class="desc">Daya pisah converter vs non-converter. &gt;0,4 = kuat.</div>
+          </div>
+        </div>
+
+        <h3>Uji Signifikansi Tahap Funnel WhatsApp</h3>
+        <table class="stat-table" id="funnelStatsTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
+        <div id="funnelInsight" class="insight-box">Menghitung insight...</div>
+
+        <h3>Profil Lengkap Tier</h3>
+        <table class="stat-table" id="tierProfileTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
+        <div class="insight-box">Angka "baseline kirim saat ini" di tabel aksi dihitung dari rata-rata Sent Jul per user ÷ estimasi minggu berjalan. Angka rekomendasi frekuensi = baseline data + kaidah umum anti-fatigue campaign (bukan murni statistik) — sebaiknya divalidasi A/B test kecil dulu, terutama untuk tier Medium.</div>
+      </div>
+    </details>
+  </div>
+
   <div class="cards" id="cards">
     <div class="card total">
       <div class="label">Total Eligible</div>
@@ -142,7 +191,7 @@
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel" id="drillDownPanel">
     <div class="panel-head">
       <h2 id="panelTitle">Klik salah satu kartu tier di atas untuk lihat daftar User ID</h2>
       <div class="controls" id="controls" style="display:none;">
@@ -157,57 +206,9 @@
     </div>
   </div>
 
-  <div class="analysis-panel">
-    <h2>🎯 Segmen Mana yang Harus Dikejar?</h2>
-    <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet — jawaban di bawah selalu ikut data terkini, bukan teks statis.</div>
-
-    <div class="analysis-sub">
-      <div class="priority-grid" id="priorityGrid"></div>
-    </div>
-
-    <div class="analysis-sub">
-      <h3>Rekomendasi Aksi &amp; Frekuensi Kontak per Segmen</h3>
-      <table class="action-table" id="actionTable"><tbody><tr><td>Menghitung...</td></tr></tbody></table>
-    </div>
-
-    <details class="tech-details">
-      <summary>Lihat bukti statistik &amp; metodologi (untuk audit / validasi teknis)</summary>
-      <div class="tech-body">
-        <h3 style="margin-top:0;">Metode &amp; Tingkat Keberhasilan Model</h3>
-        <div class="method-grid" id="methodGrid">
-          <div class="method-box">
-            <div class="num" style="font-size:14px;">WOE + Logistic Regression</div>
-            <div class="lbl">Metode Scoring</div>
-            <div class="desc">Standar industri credit/propensity scoring untuk target biner langka. Tahan data hilang &amp; mudah dijelaskan ke bisnis.</div>
-          </div>
-          <div class="method-box">
-            <div class="num" id="aucBox">—</div>
-            <div class="lbl">AUC (live)</div>
-            <div class="desc">Akurasi urutan skor model. &gt;80% = sangat kuat.</div>
-          </div>
-          <div class="method-box">
-            <div class="num" id="ksBox">—</div>
-            <div class="lbl">KS Statistic (live)</div>
-            <div class="desc">Daya pisah converter vs non-converter. &gt;0,4 = kuat.</div>
-          </div>
-        </div>
-        <div class="insight-box">Bobot model (WOE &amp; koefisien) <b>tetap</b> — yang dihitung ulang tiap refresh cuma seberapa akurat bobot itu kalau diuji ke data terbaru (bukan retrain). AUC/KS turun signifikan dari waktu ke waktu = sinyal perlu retrain manual.</div>
-
-        <h3>Uji Signifikansi Tahap Funnel WhatsApp</h3>
-        <table class="stat-table" id="funnelStatsTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
-        <div id="funnelInsight" class="insight-box">Menghitung insight...</div>
-
-        <h3>Profil Lengkap Tier</h3>
-        <table class="stat-table" id="tierProfileTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
-        <div class="insight-box">Angka "baseline kirim saat ini" di tabel aksi dihitung dari rata-rata Sent Jul per user ÷ estimasi minggu berjalan. Angka rekomendasi frekuensi = baseline data + kaidah umum anti-fatigue campaign (bukan murni statistik) — sebaiknya divalidasi A/B test kecil dulu, terutama untuk tier Medium.</div>
-      </div>
-    </details>
-  </div>
-
   <div class="foot-panel">
-    <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 (bobot tetap; AUC &amp; KS divalidasi ulang tiap refresh terhadap data terbaru — lihat "Lihat bukti statistik" di atas).
+    <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 — model di-retrain otomatis tiap refresh dari data terbaru (lihat "Status Training Model" &amp; "Lihat bukti statistik" di atas untuk detail &amp; drift-nya).
     Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
-    Skor dihitung ulang otomatis setiap dashboard dibuka, mengikuti data terbaru di Google Sheet — bobot model bersifat tetap (tidak retrain otomatis) supaya hasil konsisten &amp; mudah diaudit; retrain manual direkomendasikan tiap kuartal atau saat tim data mengonfirmasi data baru (mis. OCS Score yang sudah dibersihkan) siap dipakai.
     User dengan flag khusus di kolom <code>Noted</code> (mis. "Dont Touch!") otomatis dikecualikan dari scoring kalau kolom itu ada di sheet — saat ini kolom Noted sudah dihapus dari sheet sehingga tidak ada user yang dikecualikan. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
   </div>
 
@@ -244,22 +245,24 @@ function twoPropZTest(x1,n1,x2,n2){
   return {p1,p2,z,pVal};
 }
 
-/* ============== MODEL (WOE + Logistic Regression, fixed weights) ============== */
-const WOE_SEG = {">M4": 0.31717, "M0": 0.687949, "M1": -2.096653, "M2": -2.124888, "M3": -1.48922};
-const WOE_ENG = {"NotSent": 6.667434, "Sent": 0.26485, "Delivered": -1.251977, "Read": -1.241717};
-const COEF = {seg: -0.5029083541937687, eng: -0.7657522377295278};
-const INTERCEPT = -4.666039643347923;
+/* ============== MODEL (WOE + Logistic Regression) ============== */
+const AUTO_RETRAIN = true; // true = model dilatih ulang otomatis tiap refresh dari data live. false = pakai bobot baseline tetap.
+
+// Baseline: bobot hasil training awal (Jun 2026), dipakai sebagai fallback & pembanding drift
+const BASELINE = {
+  woeSeg: {">M4": 0.31717, "M0": 0.687949, "M1": -2.096653, "M2": -2.124888, "M3": -1.48922},
+  woeEng: {"NotSent": 6.667434, "Sent": 0.26485, "Delivered": -1.251977, "Read": -1.241717},
+  coef: {seg: -0.5029083541937687, eng: -0.7657522377295278},
+  intercept: -4.666039643347923
+};
+
+// Bobot AKTIF yang dipakai untuk scoring saat ini - diupdate oleh retrainModel() tiap load kalau AUTO_RETRAIN=true
+let ACTIVE = JSON.parse(JSON.stringify(BASELINE));
+let LAST_TRAINED_AT = null;
+
 const TIER_CUTOFF_HIGH = 0.045;
 const TIER_CUTOFF_MED = 0.015;
-const REF_RATE = {High: 0.055, Medium: 0.009, Low: 0.005}; // historical validated conversion rate per tier
 
-function segmentFromDays(days){
-  if(days <= 30) return "M0";
-  if(days <= 60) return "M1";
-  if(days <= 90) return "M2";
-  if(days <= 120) return "M3";
-  return ">M4";
-}
 function engagementStage(sent, delivered, read){
   if(read > 0) return "Read";
   if(delivered > 0) return "Delivered";
@@ -267,17 +270,53 @@ function engagementStage(sent, delivered, read){
   return "NotSent";
 }
 function sigmoid(x){ return 1/(1+Math.exp(-x)); }
-function scoreRow(days, sent, delivered, read){
-  const seg = segmentFromDays(days);
-  const eng = engagementStage(sent, delivered, read);
-  const woeS = WOE_SEG[seg] ?? 0;
-  const woeE = WOE_ENG[eng] ?? 0;
-  const z = INTERCEPT + COEF.seg*woeS + COEF.eng*woeE;
-  const p = sigmoid(z);
-  let tier = "Low";
-  if(p >= TIER_CUTOFF_HIGH) tier = "High";
-  else if(p >= TIER_CUTOFF_MED) tier = "Medium";
-  return {seg, eng, prob:p, tier};
+
+// Melatih ulang WOE + koefisien logistic regression dari data agregat (bukan per-baris, tapi
+// per kombinasi Segment x Engagement Jun yang sudah dikelompokkan - jauh lebih ringan & cepat
+// untuk 100rb+ baris, hasilnya matematis identik dengan fit per-baris).
+function retrainModel(comboRaw){
+  const segAgg = {}, engAgg = {};
+  let totalPos = 0, totalNeg = 0;
+  for(const key in comboRaw){
+    const [seg, eng] = key.split("|");
+    const c = comboRaw[key];
+    segAgg[seg] = segAgg[seg] || {pos:0,neg:0}; segAgg[seg].pos += c.pos; segAgg[seg].neg += c.neg;
+    engAgg[eng] = engAgg[eng] || {pos:0,neg:0}; engAgg[eng].pos += c.pos; engAgg[eng].neg += c.neg;
+    totalPos += c.pos; totalNeg += c.neg;
+  }
+  if(totalPos < 30) return null; // data positif terlalu sedikit untuk retrain yang stabil - pakai baseline
+
+  function woeMap(agg){
+    const m = {};
+    for(const k in agg){
+      const pe = Math.max(agg[k].pos/totalPos, 0.0005);
+      const pn = Math.max(agg[k].neg/totalNeg, 0.0005);
+      m[k] = Math.log(pn/pe);
+    }
+    return m;
+  }
+  const woeSeg = woeMap(segAgg);
+  const woeEng = woeMap(engAgg);
+
+  // Gradient descent (weighted logistic regression) di atas kombinasi yang sudah dikelompokkan
+  const combos = Object.keys(comboRaw).map(key=>{
+    const [seg, eng] = key.split("|");
+    const c = comboRaw[key];
+    return {woeS: woeSeg[seg] ?? 0, woeE: woeEng[eng] ?? 0, n: c.pos+c.neg, pos: c.pos};
+  });
+  const totalN = totalPos + totalNeg;
+  let b0=0, b1=0, b2=0;
+  const lr = 0.5;
+  for(let it=0; it<3000; it++){
+    let g0=0, g1=0, g2=0;
+    combos.forEach(c=>{
+      const p = sigmoid(b0 + b1*c.woeS + b2*c.woeE);
+      const resid = c.pos - c.n*p;
+      g0 += resid; g1 += c.woeS*resid; g2 += c.woeE*resid;
+    });
+    b0 += lr*g0/totalN; b1 += lr*g1/totalN; b2 += lr*g2/totalN;
+  }
+  return {woeSeg, woeEng, coef:{seg:b1, eng:b2}, intercept:b0};
 }
 
 /* ============== DATA LOAD ============== */
@@ -286,7 +325,7 @@ let excludedCount = 0;
 let activeTier = null;
 let FUNNEL = {}; // stage -> {n, events} based on Jun (periode lengkap terakhir) untuk uji signifikansi
 let TIER_STATS = {}; // tier -> {n, sumProb, sumSentJul}
-let COMBO_JUN = {}; // "seg|engJun" -> {prob, pos, neg} - untuk validasi AUC/KS live (model TETAP, cuma diuji ulang)
+let COMBO_JUN = {}; // "seg|engJun" -> {prob, pos, neg} - untuk validasi AUC/KS live
 let SNAPSHOT_DAY_OF_MONTH = null; // dari kolom Date, dipakai estimasi frekuensi kirim/minggu
 
 async function loadData(){
@@ -302,69 +341,87 @@ async function loadData(){
     excludedCount = 0;
     FUNNEL = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
     TIER_STATS = {High:{n:0,sumProb:0,sumSentJul:0}, Medium:{n:0,sumProb:0,sumSentJul:0}, Low:{n:0,sumProb:0,sumSentJul:0}};
-    COMBO_JUN = {};
     SNAPSHOT_DAY_OF_MONTH = null;
 
     // Struktur sheet asli "lending vw_experiment_paid_reje":
     // Cust ID, Paidback Date, OCS Score, Date, Year, Now, Segment, Sent Jul, Delivered Jul,
     // Read Jul, Created Jul, Deliv Jul %, % Jul Read, Sent Jun, Delivered Jun, Read Jun,
     // Created Jun, % Jun, Noted
-    // "Segment" (M0-M4) dipakai langsung dari sheet (sudah dihitung dari Paidback Date saat
-    // data di-export) — akan otomatis ikut ter-update selama sheet ini di-refresh berkala
-    // dengan data export terbaru. Engagement "current period" pakai kolom *Jul (periode berjalan).
-    // Kolom *Jun (periode lengkap terakhir, ada label "Created") dipakai khusus untuk uji
-    // signifikansi statistik funnel di bawah - BUKAN untuk skor (skor pakai *Jul).
+    // Kolom *Jun (periode lengkap terakhir, sudah ada outcome "Created" final) dipakai untuk
+    // (re)training/validasi model. Kolom *Jul (periode berjalan) dipakai untuk SCORING saat ini.
+
+    /* ---- PASS 1: kumpulkan baris valid + hitung raw counts per kombinasi Segment x Engagement Jun ---- */
+    const rawRows = [];
+    const comboRaw = {}; // "seg|engJun" -> {pos, neg} - dipakai untuk retrain DAN validasi AUC/KS
     rows.forEach(r => {
       const custId = (r["Cust ID"]||"").toString().trim();
       if(!custId) return;
       const noted = (r["Noted"]||"").toString().trim();
-
-      let seg = (r["Segment"]||"").toString().trim();
       const notedRaw = noted.toLowerCase();
       if(notedRaw && notedRaw !== "0"){ excludedCount++; return; }
-      if(!(seg in WOE_SEG)) seg = ">M4"; // fallback kalau segment kosong/tidak dikenali
 
-      const sent = parseInt(r["Sent Jul"]) || 0;
-      const delivered = parseInt(r["Delivered Jul"]) || 0;
-      const read = parseInt(r["Read Jul"]) || 0;
+      let seg = (r["Segment"]||"").toString().trim();
+      if(!(seg in BASELINE.woeSeg)) seg = ">M4"; // fallback kalau segment kosong/tidak dikenali
 
-      const eng = engagementStage(sent, delivered, read);
-      const woeS = WOE_SEG[seg] ?? 0;
-      const woeE = WOE_ENG[eng] ?? 0;
-      const z = INTERCEPT + COEF.seg*woeS + COEF.eng*woeE;
-      const p = sigmoid(z);
-      let tier = "Low";
-      if(p >= TIER_CUTOFF_HIGH) tier = "High";
-      else if(p >= TIER_CUTOFF_MED) tier = "Medium";
+      const sentJul = parseInt(r["Sent Jul"]) || 0;
+      const deliveredJul = parseInt(r["Delivered Jul"]) || 0;
+      const readJul = parseInt(r["Read Jul"]) || 0;
+      const sentJun = parseInt(r["Sent Jun"]) || 0;
+      const deliveredJun = parseInt(r["Delivered Jun"]) || 0;
+      const readJun = parseInt(r["Read Jun"]) || 0;
+      const createdJun = (parseInt(r["Created Jun"]) || 0) > 0 ? 1 : 0;
+      const engJun = engagementStage(sentJun, deliveredJun, readJun);
 
-      DATA.push({custId, seg, eng, prob: p, tier});
-      TIER_STATS[tier].n++;
-      TIER_STATS[tier].sumProb += p;
-      TIER_STATS[tier].sumSentJul += sent;
+      rawRows.push({custId, seg, sentJul, deliveredJul, readJul, engJun, createdJun});
+
+      const comboKey = seg + "|" + engJun;
+      if(!comboRaw[comboKey]) comboRaw[comboKey] = {pos:0, neg:0};
+      if(createdJun) comboRaw[comboKey].pos++; else comboRaw[comboKey].neg++;
+
+      FUNNEL[engJun].n++;
+      FUNNEL[engJun].events += createdJun;
 
       if(SNAPSHOT_DAY_OF_MONTH === null){
         const dstr = (r["Date"]||"").toString().trim();
         const d = dstr ? new Date(dstr) : null;
         if(d && !isNaN(d)) SNAPSHOT_DAY_OF_MONTH = d.getDate();
       }
+    });
 
-      // funnel stats pakai Jun (periode lengkap, ada outcome Created Jun yang sudah final)
-      const sentJun = parseInt(r["Sent Jun"]) || 0;
-      const deliveredJun = parseInt(r["Delivered Jun"]) || 0;
-      const readJun = parseInt(r["Read Jun"]) || 0;
-      const createdJun = (parseInt(r["Created Jun"]) || 0) > 0 ? 1 : 0;
-      const engJun = engagementStage(sentJun, deliveredJun, readJun);
-      FUNNEL[engJun].n++;
-      FUNNEL[engJun].events += createdJun;
+    /* ---- RETRAIN (kalau diaktifkan) - sebelum scoring, supaya scoring pakai bobot terbaru ---- */
+    if(AUTO_RETRAIN){
+      const retrained = retrainModel(comboRaw);
+      ACTIVE = retrained || BASELINE; // fallback ke baseline kalau data positif terlalu sedikit
+    } else {
+      ACTIVE = BASELINE;
+    }
+    LAST_TRAINED_AT = new Date();
 
-      // Validasi live model TETAP (fixed weights) terhadap outcome Jun aktual - bukan retrain,
-      // cuma re-test seberapa bagus model yang sama pada data terbaru (AUC/KS dinamis)
-      const woeEJun = WOE_ENG[engJun] ?? 0;
-      const zJun = INTERCEPT + COEF.seg*woeS + COEF.eng*woeEJun;
-      const probJun = sigmoid(zJun);
-      const comboKey = seg + "|" + engJun;
-      if(!COMBO_JUN[comboKey]) COMBO_JUN[comboKey] = {prob: probJun, pos:0, neg:0};
-      if(createdJun) COMBO_JUN[comboKey].pos++; else COMBO_JUN[comboKey].neg++;
+    /* ---- COMBO_JUN pakai bobot AKTIF (baru) - untuk validasi AUC/KS live yang konsisten dgn skor saat ini ---- */
+    COMBO_JUN = {};
+    for(const key in comboRaw){
+      const [seg, eng] = key.split("|");
+      const woeS = ACTIVE.woeSeg[seg] ?? 0;
+      const woeE = ACTIVE.woeEng[eng] ?? 0;
+      const prob = sigmoid(ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE);
+      COMBO_JUN[key] = {prob, pos: comboRaw[key].pos, neg: comboRaw[key].neg};
+    }
+
+    /* ---- PASS 2: scoring pakai kolom Jul (periode berjalan) + bobot AKTIF ---- */
+    rawRows.forEach(row => {
+      const eng = engagementStage(row.sentJul, row.deliveredJul, row.readJul);
+      const woeS = ACTIVE.woeSeg[row.seg] ?? 0;
+      const woeE = ACTIVE.woeEng[eng] ?? 0;
+      const z = ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE;
+      const p = sigmoid(z);
+      let tier = "Low";
+      if(p >= TIER_CUTOFF_HIGH) tier = "High";
+      else if(p >= TIER_CUTOFF_MED) tier = "Medium";
+
+      DATA.push({custId: row.custId, seg: row.seg, eng, prob: p, tier});
+      TIER_STATS[tier].n++;
+      TIER_STATS[tier].sumProb += p;
+      TIER_STATS[tier].sumSentJul += row.sentJul;
     });
 
     renderSummary();
@@ -388,9 +445,10 @@ function renderSummary(){
   document.getElementById('cntHigh').textContent = high.toLocaleString('id-ID');
   document.getElementById('cntMedium').textContent = med.toLocaleString('id-ID');
   document.getElementById('cntLow').textContent = low.toLocaleString('id-ID');
-  document.getElementById('rateHigh').textContent = `Conversion rate historis: ~${(REF_RATE.High*100).toFixed(1)}%`;
-  document.getElementById('rateMedium').textContent = `Conversion rate historis: ~${(REF_RATE.Medium*100).toFixed(1)}%`;
-  document.getElementById('rateLow').textContent = `Conversion rate historis: ~${(REF_RATE.Low*100).toFixed(1)}%`;
+  const avgP = t => TIER_STATS[t] && TIER_STATS[t].n ? (TIER_STATS[t].sumProb/TIER_STATS[t].n*100).toFixed(1) : '—';
+  document.getElementById('rateHigh').textContent = `Avg. propensity: ~${avgP('High')}%`;
+  document.getElementById('rateMedium').textContent = `Avg. propensity: ~${avgP('Medium')}%`;
+  document.getElementById('rateLow').textContent = `Avg. propensity: ~${avgP('Low')}%`;
 }
 
 function fmtPct(x, d=2){ return (x*100).toFixed(d) + "%"; }
@@ -419,7 +477,30 @@ function computeLiveAucKs(){
 }
 
 function renderAnalysis(){
-  /* ---- 0. Validasi live model (fixed weights, diuji ulang ke data terbaru) ---- */
+  /* ---- 0a. Status training model ---- */
+  function pct(x){ return (x*100).toFixed(1)+"%"; }
+  const drift = Math.abs(ACTIVE.intercept - BASELINE.intercept) > 0.5
+    || Math.abs(ACTIVE.coef.seg - BASELINE.coef.seg) > 0.3
+    || Math.abs(ACTIVE.coef.eng - BASELINE.coef.eng) > 0.3;
+  const modeTxt = AUTO_RETRAIN
+    ? `<b>Mode: Auto-retrain AKTIF.</b> Model dilatih ulang otomatis setiap dashboard di-refresh, memakai data Segment x Engagement Jun terbaru sebagai label. Terakhir dilatih: <b>${LAST_TRAINED_AT ? LAST_TRAINED_AT.toLocaleString('id-ID') : '—'}</b>.`
+    : `<b>Mode: Bobot tetap (manual).</b> Model TIDAK dilatih ulang otomatis — pakai bobot baseline hasil training awal.`;
+  const driftTxt = AUTO_RETRAIN
+    ? (drift
+        ? ` ⚠️ Bobot saat ini <b>bergeser cukup jauh</b> dari baseline awal — cek tabel di bawah &amp; pertimbangkan validasi manual sebelum dipakai untuk keputusan besar.`
+        : ` Bobot saat ini masih dekat dengan baseline awal (wajar/stabil).`)
+    : '';
+  const perbandingan = `<table class="stat-table" style="margin-top:10px;"><thead><tr>
+      <th>Parameter</th><th>Baseline (training awal)</th><th>Aktif sekarang</th>
+    </tr></thead><tbody>
+      <tr><td>Intercept</td><td>${BASELINE.intercept.toFixed(3)}</td><td>${ACTIVE.intercept.toFixed(3)}</td></tr>
+      <tr><td>Koefisien Segment</td><td>${BASELINE.coef.seg.toFixed(3)}</td><td>${ACTIVE.coef.seg.toFixed(3)}</td></tr>
+      <tr><td>Koefisien Engagement</td><td>${BASELINE.coef.eng.toFixed(3)}</td><td>${ACTIVE.coef.eng.toFixed(3)}</td></tr>
+    </tbody></table>`;
+  document.getElementById('trainingStatusBox').innerHTML = modeTxt + driftTxt + perbandingan +
+    `<div style="margin-top:10px;font-size:11.5px;">⚠️ <b>Catatan penting:</b> retrain ini memakai kolom <code>Sent/Delivered/Read/Created Jun</code> sebagai data "periode lengkap terakhir". Kalau kolom itu di sheet TIDAK diganti nama tiap bulan (mis. jadi "Jul", "Agu", dst mengikuti bulan berjalan), model akan terus dilatih ulang dari data Juni yang sama dan lama-lama jadi basi. Pastikan ke tim data apakah kolom ini di-roll otomatis tiap bulan.</div>`;
+
+  /* ---- 0b. Validasi live model terhadap outcome Jun aktual ---- */
   const {auc, ks} = computeLiveAucKs();
   document.getElementById('aucBox').textContent = auc===null ? 'n/a' : fmtPct(auc, 1);
   document.getElementById('ksBox').textContent = ks===null ? 'n/a' : ks.toFixed(2);
@@ -493,6 +574,7 @@ function renderAnalysis(){
       <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(high.avgProb)}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${high.n.toLocaleString('id-ID')} (${fmtPct(high.n/totalN,1)})</span></div>
       <div class="why">Setiap pesan yang dikirim ke sini punya peluang convert tertinggi — cost per-conversion paling rendah. Kejar duluan, kalau budget terbatas ini yang harus tetap jalan.</div>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${high.tier}')">Lihat Daftar User ID ↓</button>
     </div>
     <div class="priority-card role-vol">
       <div class="rank">#2</div>
@@ -501,6 +583,7 @@ function renderAnalysis(){
       <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(volRow.expected).toLocaleString('id-ID')}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${volRow.n.toLocaleString('id-ID')} (${fmtPct(volRow.n/totalN,1)})</span></div>
       <div class="why">Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.</div>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${volRow.tier}')">Lihat Daftar User ID ↓</button>
     </div>
     <div class="priority-card role-avoid">
       <div class="rank">#3</div>
@@ -509,6 +592,7 @@ function renderAnalysis(){
       <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(low.avgProb)}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${low.n.toLocaleString('id-ID')} (${fmtPct(low.n/totalN,1)})</span></div>
       <div class="why">Cost per-conversion di sini paling mahal — kirim WA personal ke segmen ini kurang worth it. Turunkan prioritas, alihkan budget ke tier di atas.</div>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${low.tier}')">Lihat Daftar User ID ↓</button>
     </div>`;
 
   /* ---- 4. Tabel aksi & frekuensi kontak/minggu (ringkas, 1 baris per tier) ---- */
@@ -544,6 +628,10 @@ function populateCohortFilter(){
 }
 
 /* ============== DRILL-DOWN ============== */
+function jumpToTier(tier){
+  document.getElementById('cards').scrollIntoView({behavior:'smooth', block:'start'});
+  selectTier(tier);
+}
 function selectTier(tier){
   activeTier = tier;
   document.querySelectorAll('.card[data-tier]').forEach(c=>c.classList.toggle('active', c.dataset.tier===tier));
