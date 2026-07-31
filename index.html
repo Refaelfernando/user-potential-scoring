@@ -68,6 +68,7 @@
   <div class="status" id="statusBox">
     <div>Terakhir sync: <b id="lastSync">—</b></div>
     <div id="totalRow">Total user dianalisis: <b>—</b></div>
+    <button id="refreshBtn" class="ghost" style="margin-top:8px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="manualRefresh()">↻ Refresh</button>
   </div>
 </header>
 
@@ -313,6 +314,16 @@ function exportCSV(){
   a.href = URL.createObjectURL(blob);
   a.download = `user_potential_${activeTier}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
+}
+
+async function manualRefresh(){
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = '↻ Memuat...';
+  await loadData();
+  if(activeTier) renderTable();
+  btn.textContent = '↻ Refresh';
+  btn.disabled = false;
 }
 
 loadData();
