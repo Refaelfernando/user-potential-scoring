@@ -114,14 +114,53 @@
     <div>Terakhir sync: <b id="lastSync">—</b></div>
     <div id="totalRow">Total user dianalisis: <b>—</b></div>
     <button id="refreshBtn" class="ghost" style="margin-top:8px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="manualRefresh()">↻ Refresh</button>
+    <button id="retrainToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleRetrain()">Auto-Retrain: —</button>
   </div>
 </header>
 
 <main>
 
+<div class="cards" id="cards">
+    <div class="card total">
+      <div class="label">Total Eligible</div>
+      <div class="count" id="cntTotal">—</div>
+      <div class="rate" id="cntExcluded">Memuat...</div>
+    </div>
+    <div class="card high" data-tier="High" onclick="selectTier('High')">
+      <div class="label"><span class="swatch"></span>High Potential</div>
+      <div class="count" id="cntHigh">—</div>
+      <div class="rate" id="rateHigh">Conversion rate historis: —</div>
+    </div>
+    <div class="card med" data-tier="Medium" onclick="selectTier('Medium')">
+      <div class="label"><span class="swatch"></span>Medium Potential</div>
+      <div class="count" id="cntMedium">—</div>
+      <div class="rate" id="rateMedium">Conversion rate historis: —</div>
+    </div>
+    <div class="card low" data-tier="Low" onclick="selectTier('Low')">
+      <div class="label"><span class="swatch"></span>Low Potential</div>
+      <div class="count" id="cntLow">—</div>
+      <div class="rate" id="rateLow">Conversion rate historis: —</div>
+    </div>
+  </div>
+
+  <div class="panel" id="drillDownPanel">
+    <div class="panel-head">
+      <h2 id="panelTitle">Klik salah satu kartu tier di atas untuk lihat daftar User ID</h2>
+      <div class="controls" id="controls" style="display:none;">
+        <input type="text" id="searchBox" placeholder="Cari Cust ID..." oninput="renderTable()">
+        <select id="cohortFilter" onchange="renderTable()"><option value="">Semua Cohort</option></select>
+        <button class="ghost" onclick="exportCSV()">Export CSV</button>
+        <button onclick="clearSelection()">Tutup</button>
+      </div>
+    </div>
+    <div id="panelBody">
+      <div class="empty">Belum ada tier dipilih.</div>
+    </div>
+  </div>
+
   <div class="analysis-panel">
     <h2>🎯 Segmen Mana yang Harus Dikejar?</h2>
-    <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet — baca dulu bagian ini, lalu scroll ke bawah buat ambil daftar User ID-nya.</div>
+    <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet — penjelasan kenapa tiap tier jadi prioritas (scroll ke atas buat ambil daftar User ID-nya).</div>
 
     <div class="analysis-sub">
       <div class="priority-grid" id="priorityGrid"></div>
@@ -168,44 +207,6 @@
     </details>
   </div>
 
-  <div class="cards" id="cards">
-    <div class="card total">
-      <div class="label">Total Eligible</div>
-      <div class="count" id="cntTotal">—</div>
-      <div class="rate" id="cntExcluded">Memuat...</div>
-    </div>
-    <div class="card high" data-tier="High" onclick="selectTier('High')">
-      <div class="label"><span class="swatch"></span>High Potential</div>
-      <div class="count" id="cntHigh">—</div>
-      <div class="rate" id="rateHigh">Conversion rate historis: —</div>
-    </div>
-    <div class="card med" data-tier="Medium" onclick="selectTier('Medium')">
-      <div class="label"><span class="swatch"></span>Medium Potential</div>
-      <div class="count" id="cntMedium">—</div>
-      <div class="rate" id="rateMedium">Conversion rate historis: —</div>
-    </div>
-    <div class="card low" data-tier="Low" onclick="selectTier('Low')">
-      <div class="label"><span class="swatch"></span>Low Potential</div>
-      <div class="count" id="cntLow">—</div>
-      <div class="rate" id="rateLow">Conversion rate historis: —</div>
-    </div>
-  </div>
-
-  <div class="panel" id="drillDownPanel">
-    <div class="panel-head">
-      <h2 id="panelTitle">Klik salah satu kartu tier di atas untuk lihat daftar User ID</h2>
-      <div class="controls" id="controls" style="display:none;">
-        <input type="text" id="searchBox" placeholder="Cari Cust ID..." oninput="renderTable()">
-        <select id="cohortFilter" onchange="renderTable()"><option value="">Semua Cohort</option></select>
-        <button class="ghost" onclick="exportCSV()">Export CSV</button>
-        <button onclick="clearSelection()">Tutup</button>
-      </div>
-    </div>
-    <div id="panelBody">
-      <div class="empty">Belum ada tier dipilih.</div>
-    </div>
-  </div>
-
   <div class="foot-panel">
     <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 — model di-retrain otomatis tiap refresh dari data terbaru (lihat "Status Training Model" &amp; "Lihat bukti statistik" di atas untuk detail &amp; drift-nya).
     Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
@@ -246,7 +247,7 @@ function twoPropZTest(x1,n1,x2,n2){
 }
 
 /* ============== MODEL (WOE + Logistic Regression) ============== */
-const AUTO_RETRAIN = true; // true = model dilatih ulang otomatis tiap refresh dari data live. false = pakai bobot baseline tetap.
+let AUTO_RETRAIN = true; // true = model dilatih ulang otomatis tiap refresh dari data live. false = pakai bobot baseline tetap. Bisa di-toggle lewat tombol "Auto-Retrain" di header.
 
 // Baseline: bobot hasil training awal (Jun 2026), dipakai sebagai fallback & pembanding drift
 const BASELINE = {
@@ -574,7 +575,7 @@ function renderAnalysis(){
       <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(high.avgProb)}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${high.n.toLocaleString('id-ID')} (${fmtPct(high.n/totalN,1)})</span></div>
       <div class="why">Setiap pesan yang dikirim ke sini punya peluang convert tertinggi — cost per-conversion paling rendah. Kejar duluan, kalau budget terbatas ini yang harus tetap jalan.</div>
-      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${high.tier}')">Lihat Daftar User ID ↓</button>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${high.tier}')">Lihat Daftar User ID ↑</button>
     </div>
     <div class="priority-card role-vol">
       <div class="rank">#2</div>
@@ -583,7 +584,7 @@ function renderAnalysis(){
       <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(volRow.expected).toLocaleString('id-ID')}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${volRow.n.toLocaleString('id-ID')} (${fmtPct(volRow.n/totalN,1)})</span></div>
       <div class="why">Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.</div>
-      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${volRow.tier}')">Lihat Daftar User ID ↓</button>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${volRow.tier}')">Lihat Daftar User ID ↑</button>
     </div>
     <div class="priority-card role-avoid">
       <div class="rank">#3</div>
@@ -592,7 +593,7 @@ function renderAnalysis(){
       <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(low.avgProb)}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${low.n.toLocaleString('id-ID')} (${fmtPct(low.n/totalN,1)})</span></div>
       <div class="why">Cost per-conversion di sini paling mahal — kirim WA personal ke segmen ini kurang worth it. Turunkan prioritas, alihkan budget ke tier di atas.</div>
-      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${low.tier}')">Lihat Daftar User ID ↓</button>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${low.tier}')">Lihat Daftar User ID ↑</button>
     </div>`;
 
   /* ---- 4. Tabel aksi & frekuensi kontak/minggu (ringkas, 1 baris per tier) ---- */
@@ -704,6 +705,21 @@ async function manualRefresh(){
   btn.disabled = false;
 }
 
+function updateRetrainButton(){
+  const btn = document.getElementById('retrainToggle');
+  btn.textContent = AUTO_RETRAIN ? '🟢 Auto-Retrain: ON' : '⚪ Auto-Retrain: OFF';
+  btn.title = AUTO_RETRAIN
+    ? 'Model dilatih ulang otomatis tiap refresh dari data live. Klik untuk matikan (pakai bobot baseline tetap).'
+    : 'Model pakai bobot baseline tetap (tidak retrain). Klik untuk aktifkan auto-retrain.';
+}
+
+async function toggleRetrain(){
+  AUTO_RETRAIN = !AUTO_RETRAIN;
+  updateRetrainButton();
+  await manualRefresh();
+}
+
+updateRetrainButton();
 loadData();
 // Auto-refresh berkala (sama seperti CRM Dashboard) - fetch ulang tanpa perlu aksi manual dari user
 setInterval(async ()=>{
