@@ -56,29 +56,51 @@
   footer{max-width:1180px;margin:0 auto;padding:0 20px 40px;font-size:11px;color:var(--muted);line-height:1.6;}
   .foot-panel{background:#fff;border-radius:10px;padding:16px 20px;margin-top:18px;box-shadow:0 1px 3px rgba(20,30,45,.08);}
   code{background:#F0F2F5;padding:1px 5px;border-radius:4px;}
-  .analysis-panel{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(20,30,45,.08);padding:22px 24px;margin-top:18px;}
-  .analysis-panel h2{font-size:16px;margin:0 0 4px;}
-  .analysis-panel .lead{font-size:12px;color:var(--muted);margin-bottom:18px;}
-  .analysis-sub{margin-top:22px;}
-  .analysis-sub h3{font-size:13px;margin:0 0 8px;color:var(--navy-light);text-transform:uppercase;letter-spacing:.4px;}
-  .stat-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px;}
-  .stat-table th{text-align:left;background:#FAFBFC;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;padding:8px 12px;border-bottom:1px solid var(--line);}
-  .stat-table td{padding:8px 12px;border-bottom:1px solid #F0F2F5;}
+  .analysis-panel{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(20,30,45,.08);padding:24px 26px;margin-top:18px;}
+  .analysis-panel h2{font-size:17px;margin:0 0 4px;}
+  .analysis-panel .lead{font-size:12.5px;color:var(--muted);margin-bottom:20px;}
+  .analysis-sub{margin-top:26px;}
+  .analysis-sub h3{font-size:12px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
+
+  /* Priority ranking cards */
+  .priority-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+  .priority-card{border-radius:10px;padding:16px 18px;border:1px solid var(--line);position:relative;}
+  .priority-card .rank{position:absolute;top:14px;right:16px;font-size:11px;font-weight:800;color:var(--muted);}
+  .priority-card .role{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;}
+  .priority-card .tier-name{font-size:18px;font-weight:800;margin-bottom:8px;}
+  .priority-card .stat-line{font-size:12.5px;color:var(--ink);margin:3px 0;display:flex;justify-content:space-between;gap:10px;}
+  .priority-card .stat-line .k{color:var(--muted);}
+  .priority-card .why{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5;padding-top:10px;border-top:1px dashed var(--line);}
+  .priority-card.role-eff{background:var(--high-bg);}
+  .priority-card.role-vol{background:var(--med-bg);}
+  .priority-card.role-avoid{background:var(--low-bg);}
+
+  /* Tier action table */
+  .action-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .action-table th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:8px 14px;border-bottom:2px solid var(--line);}
+  .action-table td{padding:12px 14px;border-bottom:1px solid #F0F2F5;vertical-align:top;}
+  .action-table tr:last-child td{border-bottom:none;}
+  .freq-badge{display:inline-block;font-weight:700;font-size:13px;}
+  .freq-note{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
+
+  /* Collapsible technical evidence */
+  details.tech-details{margin-top:26px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  details.tech-details summary{cursor:pointer;padding:12px 16px;font-size:12.5px;font-weight:700;color:var(--navy-light);background:#FAFBFC;list-style:none;display:flex;align-items:center;gap:6px;}
+  details.tech-details summary::-webkit-details-marker{display:none;}
+  details.tech-details summary:before{content:"▸";transition:transform .15s;}
+  details.tech-details[open] summary:before{transform:rotate(90deg);}
+  details.tech-details .tech-body{padding:18px 20px;}
+  .stat-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:12px;}
+  .stat-table th{text-align:left;background:#FAFBFC;color:var(--muted);font-weight:700;font-size:10.5px;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--line);}
+  .stat-table td{padding:8px 10px;border-bottom:1px solid #F0F2F5;}
   .sig-yes{color:var(--high);font-weight:700;}
   .sig-no{color:var(--muted);font-weight:700;}
-  .insight-box{background:#F0F5FA;border-left:3px solid var(--navy-light);padding:10px 14px;font-size:13px;border-radius:0 6px 6px 0;margin:10px 0;}
-  .reco-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:8px;}
-  .reco-card{border-radius:8px;padding:14px 16px;font-size:12.5px;line-height:1.5;}
-  .reco-card.High{background:var(--high-bg);}
-  .reco-card.Medium{background:var(--med-bg);}
-  .reco-card.Low{background:var(--low-bg);}
-  .reco-card b{display:block;font-size:13px;margin-bottom:6px;}
-  .reco-card .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(0,0,0,.08);margin-bottom:6px;}
-  .method-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;}
-  .method-box{background:#FAFBFC;border:1px solid var(--line);border-radius:8px;padding:12px 14px;}
-  .method-box .num{font-size:22px;font-weight:800;color:var(--navy-light);}
-  .method-box .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px;}
-  .method-box .desc{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.4;}
+  .insight-box{background:#F0F5FA;border-left:3px solid var(--navy-light);padding:10px 14px;font-size:12.5px;border-radius:0 6px 6px 0;margin:10px 0;line-height:1.5;}
+  .method-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px;}
+  .method-box{background:#FAFBFC;border:1px solid var(--line);border-radius:8px;padding:10px 12px;}
+  .method-box .num{font-size:18px;font-weight:800;color:var(--navy-light);}
+  .method-box .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px;}
+  .method-box .desc{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4;}
 </style>
 </head>
 <body>
@@ -136,51 +158,54 @@
   </div>
 
   <div class="analysis-panel">
-    <h2>📊 Analisa Statistik &amp; Rekomendasi CRM</h2>
-    <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet setiap dashboard refresh — bukan teks statis.</div>
+    <h2>🎯 Segmen Mana yang Harus Dikejar?</h2>
+    <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet — jawaban di bawah selalu ikut data terkini, bukan teks statis.</div>
 
     <div class="analysis-sub">
-      <h3>Metode &amp; Tingkat Keberhasilan Model</h3>
-      <div class="method-grid" id="methodGrid">
-        <div class="method-box">
-          <div class="num">WOE + Logistic Regression</div>
-          <div class="lbl">Metode Scoring</div>
-          <div class="desc">Standar industri untuk propensity/credit scoring pada target biner langka (rare event). Dipilih karena tahan terhadap data hilang, hasilnya mudah dijelaskan ke bisnis (per-poin), dan terbukti stabil di data besar (100rb+ baris).</div>
+      <div class="priority-grid" id="priorityGrid"></div>
+    </div>
+
+    <div class="analysis-sub">
+      <h3>Rekomendasi Aksi &amp; Frekuensi Kontak per Segmen</h3>
+      <table class="action-table" id="actionTable"><tbody><tr><td>Menghitung...</td></tr></tbody></table>
+    </div>
+
+    <details class="tech-details">
+      <summary>Lihat bukti statistik &amp; metodologi (untuk audit / validasi teknis)</summary>
+      <div class="tech-body">
+        <h3 style="margin-top:0;">Metode &amp; Tingkat Keberhasilan Model</h3>
+        <div class="method-grid" id="methodGrid">
+          <div class="method-box">
+            <div class="num" style="font-size:14px;">WOE + Logistic Regression</div>
+            <div class="lbl">Metode Scoring</div>
+            <div class="desc">Standar industri credit/propensity scoring untuk target biner langka. Tahan data hilang &amp; mudah dijelaskan ke bisnis.</div>
+          </div>
+          <div class="method-box">
+            <div class="num" id="aucBox">—</div>
+            <div class="lbl">AUC (live)</div>
+            <div class="desc">Akurasi urutan skor model. &gt;80% = sangat kuat.</div>
+          </div>
+          <div class="method-box">
+            <div class="num" id="ksBox">—</div>
+            <div class="lbl">KS Statistic (live)</div>
+            <div class="desc">Daya pisah converter vs non-converter. &gt;0,4 = kuat.</div>
+          </div>
         </div>
-        <div class="method-box">
-          <div class="num" id="aucBox">—</div>
-          <div class="lbl">AUC (live, validasi ulang tiap refresh)</div>
-          <div class="desc">Peluang model menyusun urutan skor dengan benar (user yang beneran convert diberi skor lebih tinggi dari yang tidak), diuji ulang terhadap outcome Created Jun terbaru. &gt;80% = sangat kuat secara statistik.</div>
-        </div>
-        <div class="method-box">
-          <div class="num" id="ksBox">—</div>
-          <div class="lbl">KS Statistic (live, validasi ulang tiap refresh)</div>
-          <div class="desc">Seberapa jauh model memisahkan converter vs non-converter, dihitung ulang dari data terbaru. &gt;0,4 = daya pisah kuat, layak dipakai buat prioritas targeting.</div>
-        </div>
+        <div class="insight-box">Bobot model (WOE &amp; koefisien) <b>tetap</b> — yang dihitung ulang tiap refresh cuma seberapa akurat bobot itu kalau diuji ke data terbaru (bukan retrain). AUC/KS turun signifikan dari waktu ke waktu = sinyal perlu retrain manual.</div>
+
+        <h3>Uji Signifikansi Tahap Funnel WhatsApp</h3>
+        <table class="stat-table" id="funnelStatsTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
+        <div id="funnelInsight" class="insight-box">Menghitung insight...</div>
+
+        <h3>Profil Lengkap Tier</h3>
+        <table class="stat-table" id="tierProfileTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
+        <div class="insight-box">Angka "baseline kirim saat ini" di tabel aksi dihitung dari rata-rata Sent Jul per user ÷ estimasi minggu berjalan. Angka rekomendasi frekuensi = baseline data + kaidah umum anti-fatigue campaign (bukan murni statistik) — sebaiknya divalidasi A/B test kecil dulu, terutama untuk tier Medium.</div>
       </div>
-      <div class="insight-box">Bobot model (WOE &amp; koefisien) <b>tetap</b> — yang dihitung ulang tiap refresh cuma seberapa akurat bobot itu kalau diuji ke data terbaru. Kalau AUC/KS turun signifikan dari waktu ke waktu, itu sinyal model perlu di-retrain manual (lihat catatan retrain di metodologi bawah).</div>
-    </div>
-
-    <div class="analysis-sub">
-      <h3>Uji Signifikansi Tahap Funnel WhatsApp (dinamis, live)</h3>
-      <table class="stat-table" id="funnelStatsTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
-      <div id="funnelInsight" class="insight-box">Menghitung insight...</div>
-    </div>
-
-    <div class="analysis-sub">
-      <h3>Profil Tier &amp; Perkiraan Volume Konversi (dinamis, live)</h3>
-      <table class="stat-table" id="tierProfileTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
-    </div>
-
-    <div class="analysis-sub">
-      <h3>Rekomendasi Aksi CRM per Tier (dinamis, live)</h3>
-      <div class="reco-grid" id="recoGrid"></div>
-      <div class="insight-box" style="margin-top:14px;">Angka "baseline kirim saat ini" dihitung langsung dari data (rata-rata Sent Jul per user ÷ estimasi minggu berjalan). Angka "rekomendasi frekuensi" adalah <b>kombinasi baseline itu + kaidah umum anti-fatigue campaign</b> (bukan murni hasil statistik) — sebaiknya divalidasi lewat A/B test kecil sebelum diterapkan penuh, terutama di Medium tier.</div>
-    </div>
+    </details>
   </div>
 
   <div class="foot-panel">
-    <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 (AUC 0.84, KS 0.54).
+    <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 (bobot tetap; AUC &amp; KS divalidasi ulang tiap refresh terhadap data terbaru — lihat "Lihat bukti statistik" di atas).
     Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
     Skor dihitung ulang otomatis setiap dashboard dibuka, mengikuti data terbaru di Google Sheet — bobot model bersifat tetap (tidak retrain otomatis) supaya hasil konsisten &amp; mudah diaudit; retrain manual direkomendasikan tiap kuartal atau saat tim data mengonfirmasi data baru (mis. OCS Score yang sudah dibersihkan) siap dipakai.
     User dengan flag khusus di kolom <code>Noted</code> (mis. "Dont Touch!") otomatis dikecualikan dari scoring kalau kolom itu ada di sheet — saat ini kolom Noted sudah dihapus dari sheet sehingga tidak ada user yang dikecualikan. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
@@ -437,47 +462,75 @@ function renderAnalysis(){
 
   /* ---- 2. Profil tier & expected conversion ---- */
   const tierOrder = ["High","Medium","Low"];
-  let maxTier = tierOrder[0], maxExpected = -1;
   const tierRows = tierOrder.map(t=>{
     const s = TIER_STATS[t];
     const avgProb = s.n ? s.sumProb/s.n : 0;
     const expected = s.sumProb; // sum of individual probabilities = expected count
-    if(expected > maxExpected){ maxExpected = expected; maxTier = t; }
     return {tier:t, n:s.n, avgProb, expected};
   });
+  const totalN = tierRows.reduce((a,b)=>a+b.n,0) || 1;
+  const byVolume = [...tierRows].sort((a,b)=>b.expected-a.expected);
+  const volumeTier = byVolume[0].tier; // tier dengan perkiraan total konversi terbesar
+
   document.getElementById('tierProfileTable').innerHTML = `<thead><tr>
       <th>Tier</th><th>Jumlah User</th><th>% Populasi</th><th>Avg. Propensity Score</th><th>Perkiraan Total Konversi</th>
     </tr></thead><tbody>${tierRows.map(r=>{
-      const totalN = tierRows.reduce((a,b)=>a+b.n,0) || 1;
-      const highlight = r.tier===maxTier ? ' style="font-weight:700;"' : '';
-      return `<tr${highlight}><td><span class="tier-pill ${r.tier}">${r.tier}</span></td><td>${r.n.toLocaleString('id-ID')}</td>
-        <td>${fmtPct(r.n/totalN,1)}</td><td>${fmtPct(r.avgProb)}</td><td>~${Math.round(r.expected).toLocaleString('id-ID')}${r.tier===maxTier?' ⭐':''}</td></tr>`;
+      return `<tr><td><span class="tier-pill ${r.tier}">${r.tier}</span></td><td>${r.n.toLocaleString('id-ID')}</td>
+        <td>${fmtPct(r.n/totalN,1)}</td><td>${fmtPct(r.avgProb)}</td><td>~${Math.round(r.expected).toLocaleString('id-ID')}</td></tr>`;
     }).join('')}</tbody>`;
 
-  /* ---- 3. Rekomendasi dinamis per tier (termasuk frekuensi kontak/minggu) ---- */
+  /* ---- 3. Jawaban langsung: segmen mana yang dikejar (efisiensi vs volume vs avoid) ---- */
+  const high = tierRows.find(r=>r.tier==='High');
+  const medium = tierRows.find(r=>r.tier==='Medium');
+  const low = tierRows.find(r=>r.tier==='Low');
+  const volRow = tierRows.find(r=>r.tier===volumeTier);
+
+  document.getElementById('priorityGrid').innerHTML = `
+    <div class="priority-card role-eff">
+      <div class="rank">#1</div>
+      <div class="role" style="color:var(--high);">Paling Efisien per Kontak</div>
+      <div class="tier-name">${high.tier} Potential</div>
+      <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(high.avgProb)}</b></span></div>
+      <div class="stat-line"><span class="k">Jumlah user</span><span>${high.n.toLocaleString('id-ID')} (${fmtPct(high.n/totalN,1)})</span></div>
+      <div class="why">Setiap pesan yang dikirim ke sini punya peluang convert tertinggi — cost per-conversion paling rendah. Kejar duluan, kalau budget terbatas ini yang harus tetap jalan.</div>
+    </div>
+    <div class="priority-card role-vol">
+      <div class="rank">#2</div>
+      <div class="role" style="color:var(--med);">Peluang Volume Terbesar</div>
+      <div class="tier-name">${volRow.tier} Potential</div>
+      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(volRow.expected).toLocaleString('id-ID')}</b></span></div>
+      <div class="stat-line"><span class="k">Jumlah user</span><span>${volRow.n.toLocaleString('id-ID')} (${fmtPct(volRow.n/totalN,1)})</span></div>
+      <div class="why">Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.</div>
+    </div>
+    <div class="priority-card role-avoid">
+      <div class="rank">#3</div>
+      <div class="role" style="color:var(--low);">Minim Prioritas</div>
+      <div class="tier-name">${low.tier} Potential</div>
+      <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(low.avgProb)}</b></span></div>
+      <div class="stat-line"><span class="k">Jumlah user</span><span>${low.n.toLocaleString('id-ID')} (${fmtPct(low.n/totalN,1)})</span></div>
+      <div class="why">Cost per-conversion di sini paling mahal — kirim WA personal ke segmen ini kurang worth it. Turunkan prioritas, alihkan budget ke tier di atas.</div>
+    </div>`;
+
+  /* ---- 4. Tabel aksi & frekuensi kontak/minggu (ringkas, 1 baris per tier) ---- */
   const weeksElapsed = Math.max(SNAPSHOT_DAY_OF_MONTH || 21, 1) / 7; // estimasi minggu berjalan di periode Jul
   function weeklyFreq(tier){
     const s = TIER_STATS[tier];
     if(!s.n) return 0;
     return (s.sumSentJul / s.n) / weeksElapsed;
   }
-  const freqHigh = weeklyFreq('High');
-  const freqMedium = weeklyFreq('Medium');
-  const freqLow = weeklyFreq('Low');
-
-  const focusText = drSig ? "konten & copywriting pesan (dorong read rate)" : "deliverability (kualitas nomor, sending window, reputasi sender)";
-  const recos = {
-    High: `<div class="badge">Maintain</div><b>High Potential</b>
-      Sudah convert baik secara natural (avg. ${fmtPct(tierRows.find(r=>r.tier==='High').avgProb)}). Baseline kirim saat ini ~${freqHigh.toFixed(1)}x/minggu per user.
-      <b>Rekomendasi frekuensi: pertahankan di ~1-2x/minggu, jangan lebih</b> — jangan tambah frekuensi kontak, risiko fatigue/unsubscribe karena segmen ini sudah punya intent tinggi tanpa perlu didorong lebih. Opsional tambah personalisasi/high-touch (bukan tambah volume) karena size-nya kecil dan cost per-user masih terjangkau.`,
-    Medium: `<div class="badge">${maxTier==='Medium' ? 'Prioritas Utama ⭐' : 'Prioritas'}</div><b>Medium Potential</b>
-      ${maxTier==='Medium' ? 'Kontributor perkiraan total konversi TERBESAR' : 'Kontributor volume signifikan'} berkat ukuran populasinya (${tierRows.find(r=>r.tier==='Medium').n.toLocaleString('id-ID')} user). Baseline kirim saat ini ~${freqMedium.toFixed(1)}x/minggu per user.
-      Fokus perbaikan: <b>${focusText}</b>. <b>Rekomendasi frekuensi: naikkan jadi ~2-3x/minggu</b> (retry terjadwal, jeda min. 1 hari antar percobaan) — bukan nambah pesan baru, tapi nambah PELUANG delivered lewat percobaan ulang di jam/hari berbeda. Ini kolam paling layak dapat tambahan budget/effort karena headroom-nya paling besar.`,
-    Low: `<div class="badge">Deprioritaskan</div><b>Low Potential</b>
-      Conversion rate rendah (avg. ${fmtPct(tierRows.find(r=>r.tier==='Low').avgProb)}). Baseline kirim saat ini ~${freqLow.toFixed(1)}x/minggu per user.
-      <b>Rekomendasi frekuensi: turunkan ke maksimal 1x/minggu</b> (atau geser ke broadcast massal biaya rendah, bukan WA personal) — cost per-kontak di sini gak sebanding dengan peluang convert yang sangat kecil.`
-  };
-  document.getElementById('recoGrid').innerHTML = tierOrder.map(t=>`<div class="reco-card ${t}">${recos[t]}</div>`).join('');
+  const focusText = drSig ? "Konten & copywriting pesan (dorong read rate)" : "Deliverability (kualitas nomor, sending window, reputasi sender)";
+  const actionRows = [
+    {tier:'High', action:'Maintain — jangan tambah volume', freq:'1-2x/minggu (maks)', freqNote:`baseline saat ini ~${weeklyFreq('High').toFixed(1)}x/minggu`, focus:'Personalisasi/high-touch, bukan tambah volume'},
+    {tier:'Medium', action:`${volumeTier==='Medium'?'Prioritas utama — ':''}Naikkan usaha delivery`, freq:'2-3x/minggu (retry terjadwal)', freqNote:`baseline saat ini ~${weeklyFreq('Medium').toFixed(1)}x/minggu`, focus:focusText},
+    {tier:'Low', action:'Turunkan/geser ke channel murah', freq:'≤1x/minggu', freqNote:`baseline saat ini ~${weeklyFreq('Low').toFixed(1)}x/minggu`, focus:'Broadcast massal, bukan WA personal'},
+  ];
+  document.getElementById('actionTable').innerHTML = `<thead><tr>
+      <th>Tier</th><th>Aksi</th><th>Frekuensi Kontak</th><th>Fokus Perbaikan</th>
+    </tr></thead><tbody>${actionRows.map(r=>`
+      <tr><td><span class="tier-pill ${r.tier}">${r.tier}</span></td>
+        <td>${r.action}</td>
+        <td><span class="freq-badge">${r.freq}</span><span class="freq-note">${r.freqNote}</span></td>
+        <td>${r.focus}</td></tr>`).join('')}</tbody>`;
 }
 
 function populateCohortFilter(){
