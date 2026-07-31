@@ -195,9 +195,10 @@ async function loadData(){
       const custId = (r["Cust ID"]||"").toString().trim();
       if(!custId) return;
       const noted = (r["Noted"]||"").toString().trim();
-      if(noted === "Dont Touch!"){ excludedCount++; return; }
 
       let seg = (r["Segment"]||"").toString().trim();
+      const notedRaw = noted.toLowerCase();
+      if(notedRaw && notedRaw !== "0"){ excludedCount++; return; }
       if(!(seg in WOE_SEG)) seg = ">M4"; // fallback kalau segment kosong/tidak dikenali
 
       const sent = parseInt(r["Sent Jul"]) || 0;
