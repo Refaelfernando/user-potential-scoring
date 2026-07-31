@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Potential Scoring Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --navy:#0F2A43; --navy-light:#1F4E78; --paper:#F6F7F9; --ink:#1B2430; --muted:#6B7686;
+    --high:#1E8E5A; --high-bg:#E6F5EC; --med:#B8860B; --med-bg:#FBF3DC; --low:#B33A3A; --low-bg:#FBEAEA;
+    --line:#E1E5EA;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--paper);color:var(--ink);}
+  header{background:var(--navy);color:#fff;padding:22px 32px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
+  header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.2px;}
+  header .sub{font-size:12px;color:#B9C6D6;margin-top:4px;}
+  .status{font-size:12px;color:#B9C6D6;text-align:right;}
+  .status b{color:#fff;}
+  main{max-width:1180px;margin:0 auto;padding:24px 20px 60px;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:22px;}
+  .card{border-radius:10px;padding:18px 20px;cursor:pointer;border:2px solid transparent;transition:transform .12s ease, box-shadow .12s ease;background:#fff;box-shadow:0 1px 3px rgba(20,30,45,.08);}
+  .card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(20,30,45,.12);}
+  .card.active{border-color:currentColor;}
+  .card .label{font-size:12px;text-transform:uppercase;letter-spacing:.6px;font-weight:700;opacity:.85;}
+  .card .count{font-size:32px;font-weight:800;margin:6px 0 2px;}
+  .card .rate{font-size:12px;color:var(--muted);}
+  .card.high{color:var(--high);} .card.high .count{color:var(--ink);}
+  .card.med{color:var(--med);} .card.med .count{color:var(--ink);}
+  .card.low{color:var(--low);} .card.low .count{color:var(--ink);}
+  .card.total{color:var(--navy-light);cursor:default;}
+  .card.total:hover{transform:none;box-shadow:0 1px 3px rgba(20,30,45,.08);}
+  .card .swatch{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;}
+  .high .swatch{background:var(--high);} .med .swatch{background:var(--med);} .low .swatch{background:var(--low);}
+
+  .panel{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(20,30,45,.08);padding:0;overflow:hidden;}
+  .panel-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .panel-head h2{font-size:15px;margin:0;}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  input[type=text]{padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:220px;}
+  select{padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;}
+  button{padding:7px 14px;border:1px solid var(--navy-light);background:var(--navy-light);color:#fff;border-radius:6px;font-size:13px;cursor:pointer;}
+  button.ghost{background:#fff;color:var(--navy-light);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{text-align:left;background:#FAFBFC;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:10px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;}
+  tbody td{padding:9px 20px;border-bottom:1px solid #F0F2F5;}
+  tbody tr:hover{background:#F8FAFC;}
+  .tbl-wrap{max-height:520px;overflow:auto;}
+  .tier-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+  .tier-pill.High{background:var(--high-bg);color:var(--high);}
+  .tier-pill.Medium{background:var(--med-bg);color:var(--med);}
+  .tier-pill.Low{background:var(--low-bg);color:var(--low);}
+  .empty, .loading, .err{padding:60px 20px;text-align:center;color:var(--muted);font-size:13px;}
+  .err{color:var(--low);}
+  footer{max-width:1180px;margin:0 auto;padding:0 20px 40px;font-size:11px;color:var(--muted);line-height:1.6;}
+  .foot-panel{background:#fff;border-radius:10px;padding:16px 20px;margin-top:18px;box-shadow:0 1px 3px rgba(20,30,45,.08);}
+  code{background:#F0F2F5;padding:1px 5px;border-radius:4px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>User Potential Scoring — "Created"</h1>
+    <div class="sub">Segmentasi propensity user berdasarkan cohort recency &amp; engagement (live dari Google Sheet)</div>
+  </div>
+  <div class="status" id="statusBox">
+    <div>Terakhir sync: <b id="lastSync">—</b></div>
+    <div id="totalRow">Total user dianalisis: <b>—</b></div>
+  </div>
+</header>
+
+<main>
+
+  <div class="cards" id="cards">
+    <div class="card total">
+      <div class="label">Total Eligible</div>
+      <div class="count" id="cntTotal">—</div>
+      <div class="rate" id="cntExcluded">— dikecualikan (Dont Touch!)</div>
+    </div>
+    <div class="card high" data-tier="High" onclick="selectTier('High')">
+      <div class="label"><span class="swatch"></span>High Potential</div>
+      <div class="count" id="cntHigh">—</div>
+      <div class="rate" id="rateHigh">Conversion rate historis: —</div>
+    </div>
+    <div class="card med" data-tier="Medium" onclick="selectTier('Medium')">
+      <div class="label"><span class="swatch"></span>Medium Potential</div>
+      <div class="count" id="cntMedium">—</div>
+      <div class="rate" id="rateMedium">Conversion rate historis: —</div>
+    </div>
+    <div class="card low" data-tier="Low" onclick="selectTier('Low')">
+      <div class="label"><span class="swatch"></span>Low Potential</div>
+      <div class="count" id="cntLow">—</div>
+      <div class="rate" id="rateLow">Conversion rate historis: —</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2 id="panelTitle">Klik salah satu kartu tier di atas untuk lihat daftar User ID</h2>
+      <div class="controls" id="controls" style="display:none;">
+        <input type="text" id="searchBox" placeholder="Cari Cust ID..." oninput="renderTable()">
+        <select id="cohortFilter" onchange="renderTable()"><option value="">Semua Cohort</option></select>
+        <button class="ghost" onclick="exportCSV()">Export CSV</button>
+        <button onclick="clearSelection()">Tutup</button>
+      </div>
+    </div>
+    <div id="panelBody">
+      <div class="empty">Belum ada tier dipilih.</div>
+    </div>
+  </div>
+
+  <div class="foot-panel">
+    <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 (AUC 0.84, KS 0.54).
+    Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
+    Skor dihitung ulang otomatis setiap dashboard dibuka, mengikuti data terbaru di Google Sheet — bobot model bersifat tetap (tidak retrain otomatis) supaya hasil konsisten &amp; mudah diaudit; retrain manual direkomendasikan tiap kuartal atau saat tim data mengonfirmasi data baru (mis. OCS Score yang sudah dibersihkan) siap dipakai.
+    User dengan flag <code>Dont Touch!</code> otomatis dikecualikan dari scoring.
+  </div>
+
+</main>
+
+<footer>
+  Dashboard ini hanya menghitung ulang (re-apply) formula yang sudah ada — bukan melatih ulang model. Untuk update bobot model, model perlu dilatih ulang secara terpisah oleh analyst dan konstanta di bagian atas script (WOE / koefisien) diperbarui manual.
+</footer>
+
+<script>
+/* ============== KONFIGURASI ============== */
+// Terhubung ke sheet "Cohort Experiment 210726", tab "lending vw_experiment_paid_reje"
+const SHEET_ID = "1TCFGgF8UjzLwcA9Oq9veaYXNTFejwU1PS1k08kG6gGo";
+const SHEET_NAME = "lending vw_experiment_paid_reje"; // nama tab di Google Sheet
+const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+/* ============== MODEL (WOE + Logistic Regression, fixed weights) ============== */
+const WOE_SEG = {">M4": 0.31717, "M0": 0.687949, "M1": -2.096653, "M2": -2.124888, "M3": -1.48922};
+const WOE_ENG = {"NotSent": 6.667434, "Sent": 0.26485, "Delivered": -1.251977, "Read": -1.241717};
+const COEF = {seg: -0.5029083541937687, eng: -0.7657522377295278};
+const INTERCEPT = -4.666039643347923;
+const TIER_CUTOFF_HIGH = 0.045;
+const TIER_CUTOFF_MED = 0.015;
+const REF_RATE = {High: 0.055, Medium: 0.009, Low: 0.005}; // historical validated conversion rate per tier
+
+function segmentFromDays(days){
+  if(days <= 30) return "M0";
+  if(days <= 60) return "M1";
+  if(days <= 90) return "M2";
+  if(days <= 120) return "M3";
+  return ">M4";
+}
+function engagementStage(sent, delivered, read){
+  if(read > 0) return "Read";
+  if(delivered > 0) return "Delivered";
+  if(sent > 0) return "Sent";
+  return "NotSent";
+}
+function sigmoid(x){ return 1/(1+Math.exp(-x)); }
+function scoreRow(days, sent, delivered, read){
+  const seg = segmentFromDays(days);
+  const eng = engagementStage(sent, delivered, read);
+  const woeS = WOE_SEG[seg] ?? 0;
+  const woeE = WOE_ENG[eng] ?? 0;
+  const z = INTERCEPT + COEF.seg*woeS + COEF.eng*woeE;
+  const p = sigmoid(z);
+  let tier = "Low";
+  if(p >= TIER_CUTOFF_HIGH) tier = "High";
+  else if(p >= TIER_CUTOFF_MED) tier = "Medium";
+  return {seg, eng, prob:p, tier};
+}
+
+/* ============== DATA LOAD ============== */
+let DATA = []; // scored, eligible rows
+let excludedCount = 0;
+let activeTier = null;
+
+async function loadData(){
+  const body = document.getElementById('panelBody');
+  try{
+    const res = await fetch(CSV_URL);
+    if(!res.ok) throw new Error("Gagal fetch sheet (status " + res.status + "). Pastikan Sheet ID benar & sharing = Anyone with link (Viewer).");
+    const text = await res.text();
+    const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+    const rows = parsed.data;
+
+    DATA = [];
+    excludedCount = 0;
+
+    // Struktur sheet asli "lending vw_experiment_paid_reje":
+    // Cust ID, Paidback Date, OCS Score, Date, Year, Now, Segment, Sent Jul, Delivered Jul,
+    // Read Jul, Created Jul, Deliv Jul %, % Jul Read, Sent Jun, Delivered Jun, Read Jun,
+    // Created Jun, % Jun, Noted
+    // "Segment" (M0-M4) dipakai langsung dari sheet (sudah dihitung dari Paidback Date saat
+    // data di-export) — akan otomatis ikut ter-update selama sheet ini di-refresh berkala
+    // dengan data export terbaru. Engagement "current period" pakai kolom *Jul (periode berjalan).
+    rows.forEach(r => {
+      const custId = (r["Cust ID"]||"").toString().trim();
+      if(!custId) return;
+      const noted = (r["Noted"]||"").toString().trim();
+      if(noted === "Dont Touch!"){ excludedCount++; return; }
+
+      let seg = (r["Segment"]||"").toString().trim();
+      if(!(seg in WOE_SEG)) seg = ">M4"; // fallback kalau segment kosong/tidak dikenali
+
+      const sent = parseInt(r["Sent Jul"]) || 0;
+      const delivered = parseInt(r["Delivered Jul"]) || 0;
+      const read = parseInt(r["Read Jul"]) || 0;
+
+      const eng = engagementStage(sent, delivered, read);
+      const woeS = WOE_SEG[seg] ?? 0;
+      const woeE = WOE_ENG[eng] ?? 0;
+      const z = INTERCEPT + COEF.seg*woeS + COEF.eng*woeE;
+      const p = sigmoid(z);
+      let tier = "Low";
+      if(p >= TIER_CUTOFF_HIGH) tier = "High";
+      else if(p >= TIER_CUTOFF_MED) tier = "Medium";
+
+      DATA.push({custId, seg, eng, prob: p, tier});
+    });
+
+    renderSummary();
+    populateCohortFilter();
+    document.getElementById('lastSync').textContent = new Date().toLocaleString('id-ID');
+  }catch(e){
+    body.innerHTML = `<div class="err">Gagal memuat data: ${e.message}<br><br>
+      Cek: (1) SHEET_ID sudah diganti dari placeholder, (2) sheet sudah di-share "Anyone with the link - Viewer",
+      (3) nama tab sesuai variabel SHEET_NAME.</div>`;
+  }
+}
+
+function renderSummary(){
+  const total = DATA.length;
+  const high = DATA.filter(d=>d.tier==="High").length;
+  const med = DATA.filter(d=>d.tier==="Medium").length;
+  const low = DATA.filter(d=>d.tier==="Low").length;
+  document.getElementById('cntTotal').textContent = total.toLocaleString('id-ID');
+  document.getElementById('cntExcluded').textContent = excludedCount.toLocaleString('id-ID') + " dikecualikan (Dont Touch!)";
+  document.getElementById('cntHigh').textContent = high.toLocaleString('id-ID');
+  document.getElementById('cntMedium').textContent = med.toLocaleString('id-ID');
+  document.getElementById('cntLow').textContent = low.toLocaleString('id-ID');
+  document.getElementById('rateHigh').textContent = `Conversion rate historis: ~${(REF_RATE.High*100).toFixed(1)}%`;
+  document.getElementById('rateMedium').textContent = `Conversion rate historis: ~${(REF_RATE.Medium*100).toFixed(1)}%`;
+  document.getElementById('rateLow').textContent = `Conversion rate historis: ~${(REF_RATE.Low*100).toFixed(1)}%`;
+}
+
+function populateCohortFilter(){
+  const sel = document.getElementById('cohortFilter');
+  sel.innerHTML = '<option value="">Semua Cohort</option>';
+  ["M0","M1","M2","M3",">M4"].forEach(seg=>{
+    const opt = document.createElement('option');
+    opt.value = seg; opt.textContent = seg;
+    sel.appendChild(opt);
+  });
+}
+
+/* ============== DRILL-DOWN ============== */
+function selectTier(tier){
+  activeTier = tier;
+  document.querySelectorAll('.card[data-tier]').forEach(c=>c.classList.toggle('active', c.dataset.tier===tier));
+  document.getElementById('controls').style.display = 'flex';
+  document.getElementById('panelTitle').textContent = `Daftar User — ${tier} Potential`;
+  document.getElementById('searchBox').value = '';
+  document.getElementById('cohortFilter').value = '';
+  renderTable();
+}
+function clearSelection(){
+  activeTier = null;
+  document.querySelectorAll('.card[data-tier]').forEach(c=>c.classList.remove('active'));
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('panelTitle').textContent = 'Klik salah satu kartu tier di atas untuk lihat daftar User ID';
+  document.getElementById('panelBody').innerHTML = '<div class="empty">Belum ada tier dipilih.</div>';
+}
+function renderTable(){
+  if(!activeTier) return;
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  const cohort = document.getElementById('cohortFilter').value;
+  let rows = DATA.filter(d=>d.tier===activeTier);
+  if(cohort) rows = rows.filter(d=>d.seg===cohort);
+  if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
+  rows.sort((a,b)=>b.prob-a.prob);
+
+  const body = document.getElementById('panelBody');
+  if(rows.length===0){
+    body.innerHTML = '<div class="empty">Tidak ada user yang cocok.</div>';
+    return;
+  }
+  const maxShow = 2000;
+  const shown = rows.slice(0, maxShow);
+  let html = `<div class="tbl-wrap"><table><thead><tr>
+    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th><th>Tier</th>
+  </tr></thead><tbody>`;
+  shown.forEach(d=>{
+    html += `<tr><td>${d.custId}</td><td>${d.seg}</td><td>${d.eng}</td><td>${(d.prob*100).toFixed(2)}%</td>
+      <td><span class="tier-pill ${d.tier}">${d.tier}</span></td></tr>`;
+  });
+  html += `</tbody></table></div>`;
+  if(rows.length > maxShow){
+    html += `<div style="padding:10px 20px;font-size:12px;color:var(--muted);">Menampilkan ${maxShow} dari ${rows.length} user. Gunakan search/filter untuk mempersempit, atau Export CSV untuk daftar lengkap.</div>`;
+  }
+  body.innerHTML = html;
+}
+function exportCSV(){
+  if(!activeTier) return;
+  let rows = DATA.filter(d=>d.tier===activeTier);
+  const cohort = document.getElementById('cohortFilter').value;
+  if(cohort) rows = rows.filter(d=>d.seg===cohort);
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
+  rows.sort((a,b)=>b.prob-a.prob);
+  let csv = "Cust ID,Cohort,Engagement,Propensity Score,Tier\n";
+  rows.forEach(d=>{ csv += `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier}\n`; });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `user_potential_${activeTier}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+loadData();
+</script>
+</body>
+</html>
