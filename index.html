@@ -4,119 +4,147 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>User Potential Scoring Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
   :root{
-    --navy:#0F2A43; --navy-light:#1F4E78; --paper:#F6F7F9; --ink:#1B2430; --muted:#6B7686;
-    --high:#1E8E5A; --high-bg:#E6F5EC; --med:#B8860B; --med-bg:#FBF3DC; --low:#B33A3A; --low-bg:#FBEAEA;
-    --line:#E1E5EA;
+    --bg1:#F2EFFF; --bg2:#EAFBF5; --ink:#1E1B2E; --muted:#726F8C;
+    --grad1:#7C5CFF; --grad2:#B15CFF; --grad3:#FF5CA8;
+    --high:#00B37E; --high-bg:#DFFBEF; --high-line:#9CEFCB;
+    --med:#FF8A00; --med-bg:#FFF1DC; --med-line:#FFD79A;
+    --low:#FF4D6D; --low-bg:#FFE4EA; --low-line:#FFB8C6;
+    --line:#E9E5FB; --card:#FFFFFF;
+    --shadow:0 6px 20px rgba(124,92,255,.10);
+    --shadow-lg:0 14px 34px rgba(124,92,255,.16);
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--paper);color:var(--ink);}
-  header{background:var(--navy);color:#fff;padding:22px 32px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
-  header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.2px;}
-  header .sub{font-size:12px;color:#B9C6D6;margin-top:4px;}
-  .status{font-size:12px;color:#B9C6D6;text-align:right;}
+  body{margin:0;font-family:'Plus Jakarta Sans',Arial,sans-serif;background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 100%);background-attachment:fixed;color:var(--ink);}
+  h1,h2,h3,.num,.count,.tier-name{font-family:'Space Grotesk','Plus Jakarta Sans',sans-serif;}
+  header{background:linear-gradient(120deg,var(--grad1),var(--grad2) 55%,var(--grad3));color:#fff;padding:24px 32px 20px;border-radius:0 0 28px 28px;box-shadow:var(--shadow-lg);}
+  .header-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;}
+  header h1{font-size:23px;margin:0;font-weight:700;letter-spacing:.2px;}
+  header .sub{font-size:12.5px;color:rgba(255,255,255,.85);margin-top:5px;max-width:420px;line-height:1.5;}
+  .status{font-size:12px;color:rgba(255,255,255,.85);text-align:right;}
   .status b{color:#fff;}
-  main{max-width:1180px;margin:0 auto;padding:24px 20px 60px;}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.22);}
+  .pill-btn{padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;background:rgba(255,255,255,.16);color:#fff;border:1.5px solid rgba(255,255,255,.35);transition:background .12s ease, transform .12s ease;}
+  .pill-btn:hover{background:rgba(255,255,255,.28);transform:translateY(-1px);}
+  main{max-width:1180px;margin:0 auto;padding:26px 20px 60px;}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:22px;}
-  .card{border-radius:10px;padding:18px 20px;cursor:pointer;border:2px solid transparent;transition:transform .12s ease, box-shadow .12s ease;background:#fff;box-shadow:0 1px 3px rgba(20,30,45,.08);}
-  .card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(20,30,45,.12);}
+  .card{border-radius:20px;padding:20px 22px;cursor:pointer;border:2px solid transparent;transition:transform .15s ease, box-shadow .15s ease;background:var(--card);box-shadow:var(--shadow);}
+  .card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);}
   .card.active{border-color:currentColor;}
   .card .label{font-size:12px;text-transform:uppercase;letter-spacing:.6px;font-weight:700;opacity:.85;}
-  .card .count{font-size:32px;font-weight:800;margin:6px 0 2px;}
+  .card .count{font-size:34px;font-weight:800;margin:6px 0 2px;}
   .card .rate{font-size:12px;color:var(--muted);}
   .card.high{color:var(--high);} .card.high .count{color:var(--ink);}
   .card.med{color:var(--med);} .card.med .count{color:var(--ink);}
   .card.low{color:var(--low);} .card.low .count{color:var(--ink);}
-  .card.total{color:var(--navy-light);cursor:default;}
-  .card.total:hover{transform:none;box-shadow:0 1px 3px rgba(20,30,45,.08);}
+  .card.total{color:var(--grad1);cursor:default;}
+  .card.total:hover{transform:none;box-shadow:var(--shadow);}
   .card .swatch{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;}
   .high .swatch{background:var(--high);} .med .swatch{background:var(--med);} .low .swatch{background:var(--low);}
 
-  .panel{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(20,30,45,.08);padding:0;overflow:hidden;}
-  .panel-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .panel{background:var(--card);border-radius:20px;box-shadow:var(--shadow);padding:0;overflow:hidden;}
+  .panel-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
   .panel-head h2{font-size:15px;margin:0;}
   .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
-  input[type=text]{padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;width:220px;}
-  select{padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;}
-  button{padding:7px 14px;border:1px solid var(--navy-light);background:var(--navy-light);color:#fff;border-radius:6px;font-size:13px;cursor:pointer;}
-  button.ghost{background:#fff;color:var(--navy-light);}
+  input[type=text]{padding:8px 14px;border:1.5px solid var(--line);border-radius:999px;font-size:13px;width:220px;font-family:inherit;}
+  select{padding:8px 14px;border:1.5px solid var(--line);border-radius:999px;font-size:13px;font-family:inherit;background:#fff;}
+  button{padding:9px 18px;border:none;background:linear-gradient(120deg,var(--grad1),var(--grad2));color:#fff;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:transform .12s ease, box-shadow .12s ease;}
+  button:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(124,92,255,.35);}
+  button.ghost{background:#fff;color:var(--grad1);border:1.5px solid var(--line);}
+  button.ghost:hover{box-shadow:0 6px 16px rgba(124,92,255,.15);}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  thead th{text-align:left;background:#FAFBFC;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:10px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;}
-  tbody td{padding:9px 20px;border-bottom:1px solid #F0F2F5;}
-  tbody tr:hover{background:#F8FAFC;}
+  thead th{text-align:left;background:#FAF9FF;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:11px 22px;border-bottom:1px solid var(--line);position:sticky;top:0;}
+  tbody td{padding:10px 22px;border-bottom:1px solid #F3F1FC;}
+  tbody tr:hover{background:#FAF9FF;}
   .tbl-wrap{max-height:520px;overflow:auto;}
-  .tier-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+  .tier-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;}
   .tier-pill.High{background:var(--high-bg);color:var(--high);}
   .tier-pill.Medium{background:var(--med-bg);color:var(--med);}
   .tier-pill.Low{background:var(--low-bg);color:var(--low);}
   .empty, .loading, .err{padding:60px 20px;text-align:center;color:var(--muted);font-size:13px;}
   .err{color:var(--low);}
   footer{max-width:1180px;margin:0 auto;padding:0 20px 40px;font-size:11px;color:var(--muted);line-height:1.6;}
-  .foot-panel{background:#fff;border-radius:10px;padding:16px 20px;margin-top:18px;box-shadow:0 1px 3px rgba(20,30,45,.08);}
-  code{background:#F0F2F5;padding:1px 5px;border-radius:4px;}
-  .analysis-panel{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(20,30,45,.08);padding:24px 26px;margin-top:18px;}
-  .analysis-panel h2{font-size:17px;margin:0 0 4px;}
+  .foot-panel{background:var(--card);border-radius:20px;padding:18px 22px;margin-top:18px;box-shadow:var(--shadow);}
+  code{background:#F3F1FC;padding:1px 6px;border-radius:6px;}
+  .analysis-panel{background:var(--card);border-radius:20px;box-shadow:var(--shadow);padding:26px 28px;margin-top:18px;}
+  .analysis-panel h2{font-size:19px;margin:0 0 4px;}
   .analysis-panel .lead{font-size:12.5px;color:var(--muted);margin-bottom:20px;}
   .analysis-sub{margin-top:26px;}
-  .analysis-sub h3{font-size:12px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
+  .analysis-sub h3{font-size:12px;margin:0 0 10px;color:var(--grad1);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
 
   /* Priority ranking cards */
-  .priority-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
-  .priority-card{border-radius:10px;padding:16px 18px;border:1px solid var(--line);position:relative;}
-  .priority-card .rank{position:absolute;top:14px;right:16px;font-size:11px;font-weight:800;color:var(--muted);}
+  .priority-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;align-items:stretch;}
+  .priority-card{border-radius:18px;padding:18px 20px;border:1.5px solid transparent;position:relative;display:flex;flex-direction:column;box-shadow:var(--shadow);}
+  .priority-card .rank{position:absolute;top:16px;right:18px;font-size:11px;font-weight:800;color:var(--muted);}
   .priority-card .role{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;}
-  .priority-card .tier-name{font-size:18px;font-weight:800;margin-bottom:8px;}
+  .priority-card .tier-name{font-size:19px;font-weight:800;margin-bottom:8px;}
   .priority-card .stat-line{font-size:12.5px;color:var(--ink);margin:3px 0;display:flex;justify-content:space-between;gap:10px;}
   .priority-card .stat-line .k{color:var(--muted);}
-  .priority-card .why{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5;padding-top:10px;border-top:1px dashed var(--line);}
-  .priority-card.role-eff{background:var(--high-bg);}
-  .priority-card.role-vol{background:var(--med-bg);}
-  .priority-card.role-avoid{background:var(--low-bg);}
+  .priority-card .why{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5;padding-top:10px;border-top:1px dashed var(--line);flex:1 1 auto;}
+  .priority-card .jump-btn{margin-top:12px;}
+  .priority-card.role-eff{background:var(--high-bg);border-color:var(--high-line);}
+  .priority-card.role-vol{background:var(--med-bg);border-color:var(--med-line);}
+  .priority-card.role-avoid{background:var(--low-bg);border-color:var(--low-line);}
 
   /* Tier action table */
   .action-table{width:100%;border-collapse:collapse;font-size:13px;}
-  .action-table th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:8px 14px;border-bottom:2px solid var(--line);}
-  .action-table td{padding:12px 14px;border-bottom:1px solid #F0F2F5;vertical-align:top;}
+  .action-table th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:9px 16px;border-bottom:2px solid var(--line);}
+  .action-table td{padding:13px 16px;border-bottom:1px solid #F3F1FC;vertical-align:top;}
   .action-table tr:last-child td{border-bottom:none;}
   .freq-badge{display:inline-block;font-weight:700;font-size:13px;}
   .freq-note{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
 
   /* Collapsible technical evidence */
-  details.tech-details{margin-top:26px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
-  details.tech-details summary{cursor:pointer;padding:12px 16px;font-size:12.5px;font-weight:700;color:var(--navy-light);background:#FAFBFC;list-style:none;display:flex;align-items:center;gap:6px;}
+  details.tech-details{margin-top:26px;border:1.5px solid var(--line);border-radius:16px;overflow:hidden;}
+  details.tech-details summary{cursor:pointer;padding:13px 18px;font-size:12.5px;font-weight:700;color:var(--grad1);background:#FAF9FF;list-style:none;display:flex;align-items:center;gap:6px;}
   details.tech-details summary::-webkit-details-marker{display:none;}
   details.tech-details summary:before{content:"▸";transition:transform .15s;}
   details.tech-details[open] summary:before{transform:rotate(90deg);}
-  details.tech-details .tech-body{padding:18px 20px;}
+  details.tech-details .tech-body{padding:20px 22px;}
   .stat-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:12px;}
-  .stat-table th{text-align:left;background:#FAFBFC;color:var(--muted);font-weight:700;font-size:10.5px;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--line);}
-  .stat-table td{padding:8px 10px;border-bottom:1px solid #F0F2F5;}
+  .stat-table th{text-align:left;background:#FAF9FF;color:var(--muted);font-weight:700;font-size:10.5px;text-transform:uppercase;padding:9px 12px;border-bottom:1px solid var(--line);}
+  .stat-table td{padding:9px 12px;border-bottom:1px solid #F3F1FC;}
   .sig-yes{color:var(--high);font-weight:700;}
   .sig-no{color:var(--muted);font-weight:700;}
-  .insight-box{background:#F0F5FA;border-left:3px solid var(--navy-light);padding:10px 14px;font-size:12.5px;border-radius:0 6px 6px 0;margin:10px 0;line-height:1.5;}
+  .insight-box{background:#F2EFFF;border-left:3px solid var(--grad1);padding:11px 15px;font-size:12.5px;border-radius:0 12px 12px 0;margin:10px 0;line-height:1.5;}
   .method-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px;}
-  .method-box{background:#FAFBFC;border:1px solid var(--line);border-radius:8px;padding:10px 12px;}
-  .method-box .num{font-size:18px;font-weight:800;color:var(--navy-light);}
+  .method-box{background:#FAF9FF;border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;}
+  .method-box .num{font-size:18px;font-weight:800;color:var(--grad1);}
   .method-box .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px;}
   .method-box .desc{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4;}
+
+  /* Medium sub-tier breakdown */
+  .subtier-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:12px 0 16px;}
+  .subtier-chip{border-radius:14px;padding:12px 14px;font-size:12px;cursor:pointer;border:1.5px solid var(--line);background:#FAF9FF;transition:transform .12s ease;}
+  .subtier-chip:hover{transform:translateY(-2px);}
+  .subtier-chip.active{border-color:var(--grad1);box-shadow:0 0 0 3px rgba(124,92,255,.15);}
+  .subtier-chip .st-name{font-weight:700;font-size:13px;margin-bottom:4px;}
+  .subtier-chip .st-stat{color:var(--muted);}
+  .subtier-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:#F2EFFF;color:var(--grad1);}
 </style>
 </head>
 <body>
 
 <header>
-  <div>
-    <h1>User Potential Scoring — "Created"</h1>
-    <div class="sub">Segmentasi propensity user berdasarkan cohort recency &amp; engagement (live dari Google Sheet, auto-refresh tiap 5 menit)</div>
+  <div class="header-top">
+    <div>
+      <h1>✨ User Potential Scoring</h1>
+      <div class="sub">Cari tahu siapa yang paling potensial buat di-follow up — otomatis update dari data terbaru</div>
+    </div>
+    <div class="status" id="statusBox">
+      <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#D9FBEC;">⟳ syncing...</span></div>
+      <div id="totalRow">Total user dianalisis: <b>—</b></div>
+    </div>
   </div>
-  <div class="status" id="statusBox">
-    <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#8FD9B6;">⟳ syncing...</span></div>
-    <div id="totalRow">Total user dianalisis: <b>—</b></div>
-    <button id="refreshBtn" class="ghost" style="margin-top:8px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="manualRefresh()">↻ Refresh</button>
-    <button id="retrainToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleRetrain()">Auto-Retrain: —</button>
-    <button id="suppressToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleSuppress()">Filter Gagal Kirim: —</button>
-    <button id="createdToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleExcludeCreated()">Takeout Sudah Created: —</button>
+  <div class="toolbar">
+    <button id="refreshBtn" class="pill-btn" onclick="manualRefresh()">↻ Refresh</button>
+    <button id="retrainToggle" class="pill-btn" onclick="toggleRetrain()">Auto-Retrain: —</button>
+    <button id="suppressToggle" class="pill-btn" onclick="toggleSuppress()">Filter Gagal Kirim: —</button>
+    <button id="createdToggle" class="pill-btn" onclick="toggleExcludeCreated()">Takeout Sudah Created: —</button>
   </div>
 </header>
 
@@ -276,6 +304,19 @@ function engagementStage(sent, delivered, read){
 }
 function sigmoid(x){ return 1/(1+Math.exp(-x)); }
 
+// Pecah tier Medium jadi 3 sub-band (Tinggi/Sedang/Rendah) berdasarkan tercile propensity score -
+// dihitung ulang tiap load supaya selalu proporsional ke populasi Medium saat ini.
+function assignMediumSubtiers(){
+  const med = DATA.filter(d=>d.tier==='Medium').sort((a,b)=>b.prob-a.prob);
+  const n = med.length;
+  const third = Math.ceil(n/3);
+  med.forEach((d,i)=>{
+    if(i < third) d.subtier = 'Tinggi';
+    else if(i < third*2) d.subtier = 'Sedang';
+    else d.subtier = 'Rendah';
+  });
+}
+
 // Melatih ulang WOE + koefisien logistic regression dari data agregat (bukan per-baris, tapi
 // per kombinasi Segment x Engagement Jun yang sudah dikelompokkan - jauh lebih ringan & cepat
 // untuk 100rb+ baris, hasilnya matematis identik dengan fit per-baris).
@@ -330,6 +371,7 @@ let excludedCount = 0; // dikecualikan via kolom Noted
 let excludedUndeliverable = 0; // dikecualikan via filter gagal kirim persisten
 let excludedCreated = 0; // dikecualikan karena sudah Created bulan ini
 let activeTier = null;
+let activeSubtier = null; // sub-breakdown khusus untuk tier Medium: 'Tinggi' | 'Sedang' | 'Rendah' | null
 let FUNNEL = {}; // stage -> {n, events} based on Jun (periode lengkap terakhir) untuk uji signifikansi
 let TIER_STATS = {}; // tier -> {n, sumProb, sumSentJul}
 let COMBO_JUN = {}; // "seg|engJun" -> {prob, pos, neg} - untuk validasi AUC/KS live
@@ -440,6 +482,8 @@ async function loadData(){
       TIER_STATS[tier].sumProb += p;
       TIER_STATS[tier].sumSentJul += row.sentJul;
     });
+
+    assignMediumSubtiers();
 
     renderSummary();
     renderAnalysis();
@@ -658,6 +702,7 @@ function jumpToTier(tier){
 }
 function selectTier(tier){
   activeTier = tier;
+  activeSubtier = null;
   document.querySelectorAll('.card[data-tier]').forEach(c=>c.classList.toggle('active', c.dataset.tier===tier));
   document.getElementById('controls').style.display = 'flex';
   document.getElementById('panelTitle').textContent = `Daftar User — ${tier} Potential`;
@@ -665,8 +710,13 @@ function selectTier(tier){
   document.getElementById('cohortFilter').value = '';
   renderTable();
 }
+function selectSubtier(sub){
+  activeSubtier = (activeSubtier===sub) ? null : sub; // klik lagi buat un-toggle
+  renderTable();
+}
 function clearSelection(){
   activeTier = null;
+  activeSubtier = null;
   document.querySelectorAll('.card[data-tier]').forEach(c=>c.classList.remove('active'));
   document.getElementById('controls').style.display = 'none';
   document.getElementById('panelTitle').textContent = 'Klik salah satu kartu tier di atas untuk lihat daftar User ID';
@@ -678,21 +728,42 @@ function renderTable(){
   const cohort = document.getElementById('cohortFilter').value;
   let rows = DATA.filter(d=>d.tier===activeTier);
   if(cohort) rows = rows.filter(d=>d.seg===cohort);
+  if(activeTier==='Medium' && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   rows.sort((a,b)=>b.prob-a.prob);
 
   const body = document.getElementById('panelBody');
+  let subtierHtml = '';
+  if(activeTier==='Medium'){
+    const allMed = DATA.filter(d=>d.tier==='Medium');
+    const bands = ['Tinggi','Sedang','Rendah'];
+    subtierHtml = `<div style="padding:16px 20px 0;">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">Breakdown dalam Medium Potential</div>
+      <div class="subtier-grid">${bands.map(b=>{
+        const g = allMed.filter(d=>d.subtier===b);
+        const avg = g.length ? g.reduce((s,d)=>s+d.prob,0)/g.length : 0;
+        const active = activeSubtier===b ? ' active' : '';
+        return `<div class="subtier-chip${active}" onclick="selectSubtier('${b}')">
+          <div class="st-name">Medium-${b}</div>
+          <div class="st-stat">${g.length.toLocaleString('id-ID')} user &middot; ${fmtPct(avg)}</div>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }
+
   if(rows.length===0){
-    body.innerHTML = '<div class="empty">Tidak ada user yang cocok.</div>';
+    body.innerHTML = subtierHtml + '<div class="empty">Tidak ada user yang cocok.</div>';
     return;
   }
   const maxShow = 2000;
   const shown = rows.slice(0, maxShow);
-  let html = `<div class="tbl-wrap"><table><thead><tr>
-    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th><th>Tier</th>
+  const showSubCol = activeTier==='Medium';
+  let html = subtierHtml + `<div class="tbl-wrap"><table><thead><tr>
+    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th>
   </tr></thead><tbody>`;
   shown.forEach(d=>{
-    html += `<tr><td>${d.custId}</td><td>${d.seg}</td><td>${d.eng}</td><td>${(d.prob*100).toFixed(2)}%</td>
+    html += `<tr><td>${d.custId}</td><td>${d.seg}</td><td>${d.eng}</td><td>${fmtPct(d.prob)}</td>
+      ${showSubCol?`<td><span class="subtier-pill">${d.subtier}</span></td>`:''}
       <td><span class="tier-pill ${d.tier}">${d.tier}</span></td></tr>`;
   });
   html += `</tbody></table></div>`;
@@ -706,15 +777,21 @@ function exportCSV(){
   let rows = DATA.filter(d=>d.tier===activeTier);
   const cohort = document.getElementById('cohortFilter').value;
   if(cohort) rows = rows.filter(d=>d.seg===cohort);
+  if(activeTier==='Medium' && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   rows.sort((a,b)=>b.prob-a.prob);
-  let csv = "Cust ID,Cohort,Engagement,Propensity Score,Tier\n";
-  rows.forEach(d=>{ csv += `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier}\n`; });
+  const showSubCol = activeTier==='Medium';
+  let csv = showSubCol ? "Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier\n" : "Cust ID,Cohort,Engagement,Propensity Score,Tier\n";
+  rows.forEach(d=>{
+    csv += showSubCol
+      ? `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.subtier},${d.tier}\n`
+      : `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier}\n`;
+  });
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `user_potential_${activeTier}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `user_potential_${activeTier}${activeSubtier?'_'+activeSubtier:''}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
 
