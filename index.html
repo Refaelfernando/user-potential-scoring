@@ -263,7 +263,7 @@
   </div>
 
   <div class="foot-panel">
-    <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 — model di-retrain otomatis tiap refresh dari data terbaru (lihat "Status Training Model" &amp; "Lihat bukti statistik" di atas untuk detail &amp; drift-nya).
+    <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis periode lengkap terakhir yang terdeteksi otomatis dari kolom sheet — model di-retrain otomatis tiap refresh dari data terbaru (lihat "Status Training Model" &amp; "Lihat bukti statistik" di atas untuk detail &amp; drift-nya).
     Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
     Tiga filter bisa di-toggle lewat tombol di header: (1) flag khusus di kolom <code>Noted</code> kalau ada di sheet, (2) user yang gagal delivered 2 periode berturut-turut (Jun &amp; Jul) — indikasi nomor bermasalah, dan (3) user yang sudah <code>Created</code> bulan ini (takeout dari list supaya gak di-follow-up lagi). Ketiganya cuma memengaruhi kartu/tier/daftar User ID yang tampil — training model tetap pakai data lengkap tanpa filter ini. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
   </div>
@@ -276,11 +276,65 @@
 
 <script>
 /* ============== KONFIGURASI ============== */
-// Terhubung ke sheet "Cohort Experiment 210726", tab "lending vw_experiment_paid_reje"
-const SHEET_ID = "1TCFGgF8UjzLwcA9Oq9veaYXNTFejwU1PS1k08kG6gGo";
-const SHEET_NAME = "lending vw_experiment_paid_reje"; // nama tab di Google Sheet
-const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+// Arsitektur baru: folder Google Drive "Scoring" berisi banyak Google Sheet terpisah -
+// 1 file "Eligible ..." (roster terbaru, semua cohort) + 1 file per bulan ("Jan 26", "Feb 26", dst,
+// berisi Cust ID + Sent/Delivered/Read/Created + breakdown channel Created, SEMUA baris termasuk yang
+// Created=0). File bulan PALING BARU dipakai sebagai "periode berjalan" (scoring), sisanya (bulan
+// lengkap sebelumnya) dipakai training. Dashboard list isi folder ini otomatis tiap refresh - gak
+// perlu edit kode saat file bulan baru ditambahkan.
+const DRIVE_API_KEY = "AIzaSyBndy4lk45Nx9bVlzw9ElydHCghYtAipx8";
+const DRIVE_FOLDER_ID = "1B-1ytF8M7PhXTDNT0wSu9rztFTk3Kcc-";
 const AUTO_REFRESH_MINUTES = 60; // auto re-fetch tiap 1 jam, tanpa perlu aksi manual dari user
+const MONTH_ABBR_LIST = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+// Target training: pakai "Created WhatsApp" (bukan "Created" total) supaya model belajar dari
+// konversi yang beneran attributable ke WA - fitur kita (Sent/Delivered/Read) semuanya dari WA,
+// jadi label-nya juga sebaiknya WA-spesifik. Fallback ke "Created" kalau kolom ini gak ada.
+const TARGET_COLUMN_PRIMARY = "Created WhatsApp";
+const TARGET_COLUMN_FALLBACK = "Created";
+
+function gvizCsvUrl(sheetId){
+  return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+}
+async function fetchSheetRows(sheetId){
+  const res = await fetch(gvizCsvUrl(sheetId));
+  if(!res.ok) return null;
+  const text = await res.text();
+  if(text.trim().indexOf("<") === 0) return null;
+  const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+  return parsed.data.length ? parsed.data : null;
+}
+// List semua file di folder Drive via Drive API v3 (butuh API key, read-only, cukup buat baca nama+ID)
+async function listDriveFiles(){
+  const q = `'${DRIVE_FOLDER_ID}' in parents and trashed=false`;
+  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&key=${DRIVE_API_KEY}&fields=files(id,name)&pageSize=1000`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error(`Gagal list file di folder Drive (status ${res.status}). Cek API key & folder sharing.`);
+  const json = await res.json();
+  return json.files || [];
+}
+// Klasifikasi file berdasarkan nama: "Eligible ..." = roster, "Mon YY"/"MonYY" = file bulanan
+function classifyDriveFiles(files){
+  let eligibleFile = null;
+  const monthFiles = [];
+  files.forEach(f => {
+    const name = f.name.trim();
+    if(/^Eligible\b/i.test(name)){
+      eligibleFile = f;
+      return;
+    }
+    const m = name.match(/^([A-Za-z]{3,4})\s*(\d{2,4})$/);
+    if(m){
+      const abbr = m[1].slice(0,3);
+      const abbrLower = abbr.toLowerCase();
+      const yearPart = m[2];
+      const year = yearPart.length === 4 ? parseInt(yearPart) : 2000+parseInt(yearPart);
+      const monthNum = MONTH_ORDER[abbrLower] ?? 0;
+      monthFiles.push({id:f.id, name, abbr, year, monthNum, sortKey: year*12+monthNum});
+    }
+  });
+  monthFiles.sort((a,b)=>a.sortKey-b.sortKey);
+  return {eligibleFile, monthFiles};
+}
 
 /* ============== STATISTIK: two-proportion z-test ============== */
 function erf(x){
@@ -322,6 +376,80 @@ let LAST_TRAINED_AT = null;
 
 const TIER_CUTOFF_HIGH = 0.045;
 const TIER_CUTOFF_MED = 0.015;
+
+// Deteksi otomatis kolom "Sent <Bulan>", "Delivered <Bulan>", dst - TIDAK hardcode "Jun"/"Jul".
+// Sheet bisa terus nambah kolom bulan baru (Agu, Sep, ...) tanpa perlu edit kode ini lagi.
+const MONTH_ORDER = {jan:1,feb:2,mar:3,apr:4,mei:5,may:5,jun:6,jul:7,agu:8,aug:8,sep:9,okt:10,oct:10,nov:11,des:12,dec:12};
+
+function segmentFromDays(days){
+  if(days <= 30) return "M0";
+  if(days <= 60) return "M1";
+  if(days <= 90) return "M2";
+  if(days <= 120) return "M3";
+  return ">M4";
+}
+
+// Bangun peta Cust ID -> Paidback Date dari file Eligible (roster kumulatif semua cohort)
+function buildEligibleMap(rows){
+  const map = {};
+  rows.forEach(r=>{
+    const custId = (r["Cust ID"]||"").toString().trim();
+    if(!custId) return;
+    const pbStr = (r["Paidback Date"]||"").toString().trim();
+    const pbDate = pbStr ? new Date(pbStr) : null;
+    if(!pbDate || isNaN(pbDate)) return;
+    map[custId] = pbDate; // kalau ada duplikat Cust ID, yang terakhir menang
+  });
+  return map;
+}
+
+// Ambil kolom target: pakai Created WhatsApp kalau ada, fallback ke Created total
+function getCreatedFlag(row){
+  if(TARGET_COLUMN_PRIMARY in row) return (parseFloat(row[TARGET_COLUMN_PRIMARY]) || 0) > 0 ? 1 : 0;
+  return (parseFloat(row[TARGET_COLUMN_FALLBACK]) || 0) > 0 ? 1 : 0;
+}
+
+// Fetch semua file bulan TRAINING (bukan periode berjalan), join ke Paidback Date dari Eligible,
+// hitung Segment per bulan itu, agregasi jadi comboRaw (Segment x Engagement -> pos/neg) & FUNNEL.
+// User yang sudah gak ada lagi di Eligible terbaru (mis. sudah lulus dari status eligible) otomatis
+// di-skip dari training bulan itu - keterbatasan data, bukan bug.
+async function buildTrainingFromDriveFiles(trainingMonthFiles, eligibleMap){
+  const comboRawArchive = {};
+  const funnelArchive = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
+  const loadedMonths = [];
+
+  for(const mf of trainingMonthFiles){
+    const rows = await fetchSheetRows(mf.id);
+    if(!rows) continue;
+    loadedMonths.push(mf.name);
+    const refDate = new Date(mf.year, mf.monthNum, 0); // hari terakhir bulan itu
+
+    rows.forEach(r=>{
+      const custId = (r["Cust ID"]||"").toString().trim();
+      if(!custId) return;
+      const pbDate = eligibleMap[custId];
+      if(!pbDate) return; // gak ketemu Paidback Date-nya (sudah gak eligible lagi) - skip
+      const days = Math.floor((refDate - pbDate) / (1000*60*60*24));
+      if(days < 0) return;
+
+      const seg = segmentFromDays(days);
+      const sent = parseInt(r["Sent"]) || 0;
+      const delivered = parseInt(r["Delivered"]) || 0;
+      const read = parseInt(r["Read"]) || 0;
+      const created = getCreatedFlag(r);
+      const eng = engagementStage(sent, delivered, read);
+
+      const key = seg + "|" + eng;
+      if(!comboRawArchive[key]) comboRawArchive[key] = {pos:0, neg:0};
+      if(created) comboRawArchive[key].pos++; else comboRawArchive[key].neg++;
+
+      funnelArchive[eng].n++;
+      funnelArchive[eng].events += created;
+    });
+  }
+
+  return {comboRawArchive, funnelArchive, monthsLoaded: loadedMonths.length, loadedMonths};
+}
 
 function engagementStage(sent, delivered, read){
   if(read > 0) return "Read";
@@ -433,16 +561,46 @@ let COMBO_JUN = {}; // "seg|engJun" -> {prob, pos, neg} - untuk validasi AUC/KS 
 let SNAPSHOT_DAY_OF_MONTH = null; // dari kolom Date, dipakai estimasi frekuensi kirim/minggu
 let excludedFreqCap = 0; // dikecualikan karena sudah kena cap frekuensi mingguan tier-nya
 let JUL_ENG_COUNTS = {NotSent:0, Sent:0, Delivered:0, Read:0}; // populasi saat ini (Jul, setelah filter) per tahap engagement - dipakai kalkulator target
-let WEEKS_ELAPSED = 3; // estimasi minggu berjalan periode Jul, dihitung tiap load
+let WEEKS_ELAPSED = 3; // estimasi minggu berjalan periode berjalan, dihitung tiap load
+let CUR_LABEL = null; // label token bulan periode berjalan (scoring), terdeteksi otomatis dari sheet
+let TRAIN_LABEL = null; // label token bulan periode training/validasi, terdeteksi otomatis dari sheet
+let ARCHIVE_MONTHS_LOADED = 0; // berapa bulan berhasil di-fetch dari sheet histori (0 = belum ke-setup/gagal semua)
+let ARCHIVE_TABS_LOADED = []; // nama tab yang berhasil dimuat, buat transparansi di UI
 
 async function loadData(){
   const body = document.getElementById('panelBody');
   try{
-    const res = await fetch(CSV_URL);
-    if(!res.ok) throw new Error("Gagal fetch sheet (status " + res.status + "). Pastikan Sheet ID benar & sharing = Anyone with link (Viewer).");
-    const text = await res.text();
-    const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
-    const rows = parsed.data;
+    /* ---- 1. List & klasifikasi file di folder Drive ---- */
+    const files = await listDriveFiles();
+    const {eligibleFile, monthFiles} = classifyDriveFiles(files);
+    if(!eligibleFile) throw new Error('Gak nemu file "Eligible ..." di folder Drive. Cek nama filenya harus diawali "Eligible".');
+    if(monthFiles.length === 0) throw new Error('Gak nemu file bulanan (format "Jan 26", "Feb 26", dst) di folder Drive.');
+
+    const currentMonthFile = monthFiles[monthFiles.length - 1];
+    const trainingMonthFiles = monthFiles.slice(0, -1);
+    CUR_LABEL = currentMonthFile.name;
+    TRAIN_LABEL = trainingMonthFiles.length ? trainingMonthFiles.map(f=>f.name).join(', ') : '(belum ada bulan lengkap sebelumnya)';
+
+    /* ---- 2. Fetch roster Eligible (Cust ID -> Paidback Date) ---- */
+    const eligibleRows = await fetchSheetRows(eligibleFile.id);
+    if(!eligibleRows) throw new Error(`Gagal baca isi file "${eligibleFile.name}". Cek sharing-nya "Anyone with the link".`);
+    const eligibleMap = buildEligibleMap(eligibleRows);
+
+    /* ---- 3. Fetch file bulan berjalan (current) -> Cust ID -> {sent,delivered,read} ---- */
+    const currentRows = await fetchSheetRows(currentMonthFile.id);
+    const currentEngMap = {};
+    if(currentRows){
+      currentRows.forEach(r=>{
+        const custId = (r["Cust ID"]||"").toString().trim();
+        if(!custId) return;
+        currentEngMap[custId] = {
+          sent: parseInt(r["Sent"]) || 0,
+          delivered: parseInt(r["Delivered"]) || 0,
+          read: parseInt(r["Read"]) || 0,
+          createdNow: getCreatedFlag(r)
+        };
+      });
+    }
 
     DATA = [];
     excludedCount = 0;
@@ -450,88 +608,53 @@ async function loadData(){
     excludedCreated = 0;
     excludedFreqCap = 0;
     JUL_ENG_COUNTS = {NotSent:0, Sent:0, Delivered:0, Read:0};
-    FUNNEL = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
     TIER_STATS = {High:{n:0,sumProb:0,sumSentJul:0}, Medium:{n:0,sumProb:0,sumSentJul:0}, Low:{n:0,sumProb:0,sumSentJul:0}};
-    SNAPSHOT_DAY_OF_MONTH = null;
+    SNAPSHOT_DAY_OF_MONTH = new Date().getDate(); // file bulan berjalan diupdate rutin - pakai tanggal hari ini
+    WEEKS_ELAPSED = Math.max(SNAPSHOT_DAY_OF_MONTH, 1) / 7;
 
-    // Struktur sheet asli "lending vw_experiment_paid_reje":
-    // Cust ID, Paidback Date, OCS Score, Date, Year, Now, Segment, Sent Jul, Delivered Jul,
-    // Read Jul, Created Jul, Deliv Jul %, % Jul Read, Sent Jun, Delivered Jun, Read Jun,
-    // Created Jun, % Jun, Noted
-    // Kolom *Jun (periode lengkap terakhir, sudah ada outcome "Created" final) dipakai untuk
-    // (re)training/validasi model. Kolom *Jul (periode berjalan) dipakai untuk SCORING saat ini.
+    /* ---- 4. Training multi-bulan dari file-file bulan lengkap sebelumnya ---- */
+    const training = await buildTrainingFromDriveFiles(trainingMonthFiles, eligibleMap);
+    const trainingComboRaw = training.comboRawArchive;
+    FUNNEL = training.funnelArchive;
+    ARCHIVE_MONTHS_LOADED = training.monthsLoaded;
+    ARCHIVE_TABS_LOADED = training.loadedMonths;
 
-    /* ---- PASS 1: kumpulkan baris valid + hitung raw counts per kombinasi Segment x Engagement Jun ---- */
-    const rawRows = [];
-    const comboRaw = {}; // "seg|engJun" -> {pos, neg} - dipakai untuk retrain DAN validasi AUC/KS
-    rows.forEach(r => {
-      const custId = (r["Cust ID"]||"").toString().trim();
-      if(!custId) return;
-      const noted = (r["Noted"]||"").toString().trim();
-      const notedRaw = noted.toLowerCase();
-      if(notedRaw && notedRaw !== "0"){ excludedCount++; return; }
-
-      let seg = (r["Segment"]||"").toString().trim();
-      if(!(seg in BASELINE.woeSeg)) seg = ">M4"; // fallback kalau segment kosong/tidak dikenali
-
-      const sentJul = parseInt(r["Sent Jul"]) || 0;
-      const deliveredJul = parseInt(r["Delivered Jul"]) || 0;
-      const readJul = parseInt(r["Read Jul"]) || 0;
-      const createdJul = (parseInt(r["Created Jul"]) || 0) > 0 ? 1 : 0;
-      const sentJun = parseInt(r["Sent Jun"]) || 0;
-      const deliveredJun = parseInt(r["Delivered Jun"]) || 0;
-      const readJun = parseInt(r["Read Jun"]) || 0;
-      const createdJun = (parseInt(r["Created Jun"]) || 0) > 0 ? 1 : 0;
-      const engJun = engagementStage(sentJun, deliveredJun, readJun);
-      // Sinyal nomor kemungkinan mati: gagal delivered di Jun DAN Jul, padahal sudah dicoba kirim di keduanya
-      const persistentNonDelivery = sentJun>0 && deliveredJun===0 && sentJul>0 && deliveredJul===0;
-
-      rawRows.push({custId, seg, sentJul, deliveredJul, readJul, engJun, createdJun, createdJul, persistentNonDelivery});
-
-      const comboKey = seg + "|" + engJun;
-      if(!comboRaw[comboKey]) comboRaw[comboKey] = {pos:0, neg:0};
-      if(createdJun) comboRaw[comboKey].pos++; else comboRaw[comboKey].neg++;
-
-      FUNNEL[engJun].n++;
-      FUNNEL[engJun].events += createdJun;
-
-      if(SNAPSHOT_DAY_OF_MONTH === null){
-        const dstr = (r["Date"]||"").toString().trim();
-        const d = dstr ? new Date(dstr) : null;
-        if(d && !isNaN(d)) SNAPSHOT_DAY_OF_MONTH = d.getDate();
-      }
-    });
-
-    WEEKS_ELAPSED = Math.max(SNAPSHOT_DAY_OF_MONTH || 21, 1) / 7; // estimasi minggu berjalan periode Jul
-
-    /* ---- RETRAIN (kalau diaktifkan) - sebelum scoring, supaya scoring pakai bobot terbaru ---- */
+    /* ---- 5. RETRAIN (kalau diaktifkan) ---- */
     if(AUTO_RETRAIN){
-      const retrained = retrainModel(comboRaw);
-      ACTIVE = retrained || BASELINE; // fallback ke baseline kalau data positif terlalu sedikit
+      const retrained = retrainModel(trainingComboRaw);
+      ACTIVE = retrained || BASELINE;
     } else {
       ACTIVE = BASELINE;
     }
     LAST_TRAINED_AT = new Date();
 
-    /* ---- COMBO_JUN pakai bobot AKTIF (baru) - untuk validasi AUC/KS live yang konsisten dgn skor saat ini ---- */
+    /* ---- 6. COMBO_JUN (validasi AUC/KS live, konsisten dgn bobot AKTIF) ---- */
     COMBO_JUN = {};
-    for(const key in comboRaw){
+    for(const key in trainingComboRaw){
       const [seg, eng] = key.split("|");
       const woeS = ACTIVE.woeSeg[seg] ?? 0;
       const woeE = ACTIVE.woeEng[eng] ?? 0;
       const prob = sigmoid(ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE);
-      COMBO_JUN[key] = {prob, pos: comboRaw[key].pos, neg: comboRaw[key].neg};
+      COMBO_JUN[key] = {prob, pos: trainingComboRaw[key].pos, neg: trainingComboRaw[key].neg};
     }
 
-    /* ---- PASS 2: scoring pakai kolom Jul (periode berjalan) + bobot AKTIF ---- */
-    /* Filter suppression & takeout-created HANYA berlaku di sini (populasi tampilan/tier),
-       TIDAK memengaruhi comboRaw di atas - supaya training model tetap pakai data lengkap. */
-    rawRows.forEach(row => {
-      if(FILTER_SUPPRESS_UNDELIVERABLE && row.persistentNonDelivery){ excludedUndeliverable++; return; }
-      if(FILTER_EXCLUDE_CREATED && row.createdJul){ excludedCreated++; return; }
+    /* ---- 7. SCORING: iterasi roster Eligible, join ke engagement bulan berjalan, cek 3 filter, skor ---- */
+    const today = new Date();
+    Object.keys(eligibleMap).forEach(custId=>{
+      const pbDate = eligibleMap[custId];
+      const days = Math.floor((today - pbDate) / (1000*60*60*24));
+      const seg = segmentFromDays(days);
 
-      const eng = engagementStage(row.sentJul, row.deliveredJul, row.readJul);
-      const woeS = ACTIVE.woeSeg[row.seg] ?? 0;
+      const eng2 = currentEngMap[custId] || {sent:0, delivered:0, read:0, createdNow:0};
+      const sentJul = eng2.sent, deliveredJul = eng2.delivered, readJul = eng2.read;
+
+      if(FILTER_EXCLUDE_CREATED && eng2.createdNow){ excludedCreated++; return; }
+      // Sinyal nomor kemungkinan bermasalah: user ini gak pernah delivered padahal udah lumayan sering dikirim
+      const persistentNonDelivery = sentJul >= 5 && deliveredJul === 0;
+      if(FILTER_SUPPRESS_UNDELIVERABLE && persistentNonDelivery){ excludedUndeliverable++; return; }
+
+      const eng = engagementStage(sentJul, deliveredJul, readJul);
+      const woeS = ACTIVE.woeSeg[seg] ?? 0;
       const woeE = ACTIVE.woeEng[eng] ?? 0;
       const z = ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE;
       const p = sigmoid(z);
@@ -539,15 +662,13 @@ async function loadData(){
       if(p >= TIER_CUTOFF_HIGH) tier = "High";
       else if(p >= TIER_CUTOFF_MED) tier = "Medium";
 
-      // Cap frekuensi: estimasi berapa x/minggu user ini sudah dikirim bulan ini, dibanding
-      // rekomendasi max per tier-nya (FREQ_CAP). Kalau sudah lewat, jangan ditawarkan lagi minggu ini.
-      const estWeeklyRate = row.sentJul / WEEKS_ELAPSED;
+      const estWeeklyRate = sentJul / WEEKS_ELAPSED;
       if(FILTER_FREQ_CAP && estWeeklyRate > FREQ_CAP[tier]){ excludedFreqCap++; return; }
 
-      DATA.push({custId: row.custId, seg: row.seg, eng, prob: p, tier});
+      DATA.push({custId, seg, eng, prob: p, tier});
       TIER_STATS[tier].n++;
       TIER_STATS[tier].sumProb += p;
-      TIER_STATS[tier].sumSentJul += row.sentJul;
+      TIER_STATS[tier].sumSentJul += sentJul;
       JUL_ENG_COUNTS[eng]++;
     });
 
@@ -560,8 +681,7 @@ async function loadData(){
     document.getElementById('lastSync').textContent = new Date().toLocaleString('id-ID');
   }catch(e){
     body.innerHTML = `<div class="err">Gagal memuat data: ${e.message}<br><br>
-      Cek: (1) SHEET_ID sudah diganti dari placeholder, (2) sheet sudah di-share "Anyone with the link - Viewer",
-      (3) nama tab sesuai variabel SHEET_NAME.</div>`;
+      Cek: (1) API key & Folder ID sudah benar, (2) folder Drive & semua file di dalamnya sudah di-share "Anyone with the link", (3) nama file sesuai format ("Eligible ...", "Jan 26", dst).</div>`;
   }
 }
 
@@ -680,8 +800,11 @@ function renderAnalysis(){
     || Math.abs(ACTIVE.coef.seg - BASELINE.coef.seg) > 0.3
     || Math.abs(ACTIVE.coef.eng - BASELINE.coef.eng) > 0.3;
   const modeTxt = AUTO_RETRAIN
-    ? `<b>Mode: Auto-retrain AKTIF.</b> Model dilatih ulang otomatis setiap dashboard di-refresh, memakai data Segment x Engagement Jun terbaru sebagai label. Terakhir dilatih: <b>${LAST_TRAINED_AT ? LAST_TRAINED_AT.toLocaleString('id-ID') : '—'}</b>.`
+    ? `<b>Mode: Auto-retrain AKTIF.</b> Model dilatih ulang otomatis setiap dashboard di-refresh. Terakhir dilatih: <b>${LAST_TRAINED_AT ? LAST_TRAINED_AT.toLocaleString('id-ID') : '—'}</b>.`
     : `<b>Mode: Bobot tetap (manual).</b> Model TIDAK dilatih ulang otomatis — pakai bobot baseline hasil training awal.`;
+  const archiveTxt = ARCHIVE_MONTHS_LOADED > 0
+    ? ` 📚 Training pakai sheet histori: <b>${ARCHIVE_MONTHS_LOADED} bulan</b> berhasil dimuat (${ARCHIVE_TABS_LOADED.join(', ')}).`
+    : ` ℹ️ Sheet histori belum ke-setup/belum kebaca — training masih pakai 1 bulan dari sheet eligible (<code>${TRAIN_LABEL||'-'}</code>).`;
   const driftTxt = AUTO_RETRAIN
     ? (drift
         ? ` ⚠️ Bobot saat ini <b>bergeser cukup jauh</b> dari baseline awal — cek tabel di bawah &amp; pertimbangkan validasi manual sebelum dipakai untuk keputusan besar.`
@@ -694,8 +817,8 @@ function renderAnalysis(){
       <tr><td>Koefisien Segment</td><td>${BASELINE.coef.seg.toFixed(3)}</td><td>${ACTIVE.coef.seg.toFixed(3)}</td></tr>
       <tr><td>Koefisien Engagement</td><td>${BASELINE.coef.eng.toFixed(3)}</td><td>${ACTIVE.coef.eng.toFixed(3)}</td></tr>
     </tbody></table>`;
-  document.getElementById('trainingStatusBox').innerHTML = modeTxt + driftTxt + perbandingan +
-    `<div style="margin-top:10px;font-size:11.5px;">⚠️ <b>Catatan penting:</b> retrain ini memakai kolom <code>Sent/Delivered/Read/Created Jun</code> sebagai data "periode lengkap terakhir". Kalau kolom itu di sheet TIDAK diganti nama tiap bulan (mis. jadi "Jul", "Agu", dst mengikuti bulan berjalan), model akan terus dilatih ulang dari data Juni yang sama dan lama-lama jadi basi. Pastikan ke tim data apakah kolom ini di-roll otomatis tiap bulan.</div>`;
+  document.getElementById('trainingStatusBox').innerHTML = modeTxt + archiveTxt + driftTxt + perbandingan +
+    `<div style="margin-top:10px;font-size:11.5px;">ℹ️ Kolom periode terdeteksi otomatis: <code>${TRAIN_LABEL||'-'}</code> (training/validasi) dan <code>${CUR_LABEL||'-'}</code> (scoring/periode berjalan) — dashboard ikutin nama kolom bulan apa pun yang ada di sheet, gak perlu edit kode tiap bulan. ⚠️ Kalau histori sudah lebih dari 12 bulan, sertakan tahun di nama kolom (mis. "Sent Jun26") supaya gak ambigu antar tahun.</div>`;
 
   /* ---- 0b. Validasi live model terhadap outcome Jun aktual ---- */
   const {auc, ks} = computeLiveAucKs();
