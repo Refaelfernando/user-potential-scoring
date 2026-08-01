@@ -111,7 +111,7 @@
     <div class="sub">Segmentasi propensity user berdasarkan cohort recency &amp; engagement (live dari Google Sheet, auto-refresh tiap 5 menit)</div>
   </div>
   <div class="status" id="statusBox">
-    <div>Terakhir sync: <b id="lastSync">—</b></div>
+    <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#8FD9B6;">⟳ syncing...</span></div>
     <div id="totalRow">Total user dianalisis: <b>—</b></div>
     <button id="refreshBtn" class="ghost" style="margin-top:8px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="manualRefresh()">↻ Refresh</button>
     <button id="retrainToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleRetrain()">Auto-Retrain: —</button>
@@ -225,7 +225,7 @@
 const SHEET_ID = "1TCFGgF8UjzLwcA9Oq9veaYXNTFejwU1PS1k08kG6gGo";
 const SHEET_NAME = "lending vw_experiment_paid_reje"; // nama tab di Google Sheet
 const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
-const AUTO_REFRESH_MINUTES = 5; // sama seperti CRM Dashboard - auto re-fetch berkala tanpa perlu reload manual
+const AUTO_REFRESH_MINUTES = 60; // auto re-fetch tiap 1 jam, tanpa perlu aksi manual dari user
 
 /* ============== STATISTIK: two-proportion z-test ============== */
 function erf(x){
@@ -696,13 +696,15 @@ function exportCSV(){
 }
 
 async function manualRefresh(){
-  const btn = document.getElementById('refreshBtn');
-  btn.disabled = true;
-  btn.textContent = '↻ Memuat...';
-  await loadData();
-  if(activeTier) renderTable();
-  btn.textContent = '↻ Refresh';
-  btn.disabled = false;
+  // Optimistic refresh: tombol TIDAK di-disable dan data lama tetap tampil selama fetch
+  // berjalan di background - baru di-swap begitu data baru siap. Ini yang bikin klik terasa
+  // instan meskipun fetch+proses datanya sendiri masih butuh waktu beberapa detik di background.
+  const sync = document.getElementById('syncIndicator');
+  if(sync) sync.style.display = 'inline';
+  loadData().then(()=>{
+    if(activeTier) renderTable();
+    if(sync) sync.style.display = 'none';
+  });
 }
 
 function updateRetrainButton(){
