@@ -395,8 +395,8 @@ const BASELINE = {
 let ACTIVE = JSON.parse(JSON.stringify(BASELINE));
 let LAST_TRAINED_AT = null;
 
-const TIER_CUTOFF_HIGH = 0.045;
-const TIER_CUTOFF_MED = 0.015;
+const TIER_PCT_HIGH = 0.05; // top 5% skor tertinggi = High
+const TIER_PCT_MED = 0.30;  // 30% berikutnya = Medium (jadi cumulative top 35%), sisanya = Low
 
 // Deteksi otomatis kolom "Sent <Bulan>", "Delivered <Bulan>", dst - TIDAK hardcode "Jun"/"Jul".
 // Sheet bisa terus nambah kolom bulan baru (Agu, Sep, ...) tanpa perlu edit kode ini lagi.
@@ -655,6 +655,8 @@ let eligibleFile_lastMap = {}; // Cust ID -> Paidback Date, disimpan global buat
 let DIAG_ELIGIBLE_RAW_ROWS = 0; // jumlah baris mentah yang berhasil di-fetch dari file Eligible (diagnostik konsistensi)
 let DIAG_ELIGIBLE_UNIQUE_IDS = 0; // jumlah Cust ID unik setelah dedup (beda dari raw rows = ada duplikat)
 let DIAG_CURRENT_RAW_ROWS = 0; // jumlah baris mentah dari file bulan berjalan
+let CURRENT_CUTOFF_HIGH = null; // nilai propensity score aktual yang jadi batas bawah tier High saat ini
+let CURRENT_CUTOFF_MED = null; // nilai propensity score aktual yang jadi batas bawah tier Medium saat ini
 
 async function loadData(){
   const body = document.getElementById('panelBody');
@@ -759,8 +761,9 @@ async function loadData(){
       COMBO_JUN[key] = {prob, pos: comboRawTest[key].pos, neg: comboRawTest[key].neg};
     }
 
-    /* ---- 7. SCORING: iterasi roster Eligible, join ke engagement bulan berjalan, cek 3 filter, skor ---- */
+    /* ---- 7. SCORING: iterasi roster Eligible, join ke engagement bulan berjalan, cek filter awal, skor ---- */
     const today = new Date();
+    const scored = []; // pass A: semua yang lolos filter Created/Undeliverable, sebelum tau tier-nya
     Object.keys(eligibleMap).forEach(custId=>{
       const pbDate = eligibleMap[custId];
       const days = Math.floor((today - pbDate) / (1000*60*60*24));
@@ -779,18 +782,34 @@ async function loadData(){
       const woeE = ACTIVE.woeEng[eng] ?? 0;
       const z = ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE;
       const p = sigmoid(z);
-      let tier = "Low";
-      if(p >= TIER_CUTOFF_HIGH) tier = "High";
-      else if(p >= TIER_CUTOFF_MED) tier = "Medium";
+      scored.push({custId, seg, eng, prob: p, sentJul});
+    });
 
-      const estWeeklyRate = sentJul / WEEKS_ELAPSED;
+    // Cutoff tier berbasis PERSENTIL dari distribusi skor SAAT INI (bukan angka absolut tetap) -
+    // supaya otomatis nyesuain kalau distribusi skor bergeser (mis. gara-gara retrain atau ganti
+    // target column), dan tier High gak akan pernah kosong selama masih ada data.
+    const sortedProbs = scored.map(s=>s.prob).slice().sort((a,b)=>b-a);
+    const n = sortedProbs.length;
+    const cutHighIdx = Math.max(0, Math.floor(n*TIER_PCT_HIGH)-1);
+    const cutMedIdx = Math.max(0, Math.floor(n*(TIER_PCT_HIGH+TIER_PCT_MED))-1);
+    const cutoffHigh = n>0 ? sortedProbs[cutHighIdx] : 0;
+    const cutoffMed = n>0 ? sortedProbs[cutMedIdx] : 0;
+    CURRENT_CUTOFF_HIGH = cutoffHigh;
+    CURRENT_CUTOFF_MED = cutoffMed;
+
+    scored.forEach(s=>{
+      let tier = "Low";
+      if(s.prob >= cutoffHigh) tier = "High";
+      else if(s.prob >= cutoffMed) tier = "Medium";
+
+      const estWeeklyRate = s.sentJul / WEEKS_ELAPSED;
       if(FILTER_FREQ_CAP && estWeeklyRate > FREQ_CAP[tier]){ excludedFreqCap++; return; }
 
-      DATA.push({custId, seg, eng, prob: p, tier});
+      DATA.push({custId: s.custId, seg: s.seg, eng: s.eng, prob: s.prob, tier});
       TIER_STATS[tier].n++;
-      TIER_STATS[tier].sumProb += p;
-      TIER_STATS[tier].sumSentJul += sentJul;
-      JUL_ENG_COUNTS[eng]++;
+      TIER_STATS[tier].sumProb += s.prob;
+      TIER_STATS[tier].sumSentJul += s.sentJul;
+      JUL_ENG_COUNTS[s.eng]++;
     });
 
     assignMediumSubtiers();
@@ -812,7 +831,7 @@ function renderSummary(){
   const med = DATA.filter(d=>d.tier==="Medium").length;
   const dupCount = DIAG_ELIGIBLE_RAW_ROWS - DIAG_ELIGIBLE_UNIQUE_IDS;
   const dupNote = dupCount > 0 ? ` (⚠️ ada ${dupCount.toLocaleString('id-ID')} duplikat Cust ID)` : ' (✅ tidak ada duplikat)';
-  document.getElementById('diagRow').innerHTML = `Baris mentah — Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote} | Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')}</b>`;
+  document.getElementById('diagRow').innerHTML = `Baris mentah — Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote} | Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')}</b> | Cutoff skor saat ini — High: <b>≥${CURRENT_CUTOFF_HIGH!==null?fmtPct(CURRENT_CUTOFF_HIGH):'-'}</b>, Medium: <b>≥${CURRENT_CUTOFF_MED!==null?fmtPct(CURRENT_CUTOFF_MED):'-'}</b>`;
   const low = DATA.filter(d=>d.tier==="Low").length;
   document.getElementById('cntTotal').textContent = total.toLocaleString('id-ID');
   const parts = [];
