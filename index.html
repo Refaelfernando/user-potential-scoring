@@ -115,6 +115,8 @@
     <div id="totalRow">Total user dianalisis: <b>—</b></div>
     <button id="refreshBtn" class="ghost" style="margin-top:8px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="manualRefresh()">↻ Refresh</button>
     <button id="retrainToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleRetrain()">Auto-Retrain: —</button>
+    <button id="suppressToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleSuppress()">Filter Gagal Kirim: —</button>
+    <button id="createdToggle" class="ghost" style="margin-top:8px;margin-left:6px;background:transparent;border-color:#B9C6D6;color:#fff;" onclick="toggleExcludeCreated()">Takeout Sudah Created: —</button>
   </div>
 </header>
 
@@ -210,7 +212,7 @@
   <div class="foot-panel">
     <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis Created Jun 2026 — model di-retrain otomatis tiap refresh dari data terbaru (lihat "Status Training Model" &amp; "Lihat bukti statistik" di atas untuk detail &amp; drift-nya).
     Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
-    User dengan flag khusus di kolom <code>Noted</code> (mis. "Dont Touch!") otomatis dikecualikan dari scoring kalau kolom itu ada di sheet — saat ini kolom Noted sudah dihapus dari sheet sehingga tidak ada user yang dikecualikan. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
+    Tiga filter bisa di-toggle lewat tombol di header: (1) flag khusus di kolom <code>Noted</code> kalau ada di sheet, (2) user yang gagal delivered 2 periode berturut-turut (Jun &amp; Jul) — indikasi nomor bermasalah, dan (3) user yang sudah <code>Created</code> bulan ini (takeout dari list supaya gak di-follow-up lagi). Ketiganya cuma memengaruhi kartu/tier/daftar User ID yang tampil — training model tetap pakai data lengkap tanpa filter ini. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
   </div>
 
 </main>
@@ -248,6 +250,8 @@ function twoPropZTest(x1,n1,x2,n2){
 
 /* ============== MODEL (WOE + Logistic Regression) ============== */
 let AUTO_RETRAIN = true; // true = model dilatih ulang otomatis tiap refresh dari data live. false = pakai bobot baseline tetap. Bisa di-toggle lewat tombol "Auto-Retrain" di header.
+let FILTER_SUPPRESS_UNDELIVERABLE = true; // true = keluarkan user yang gagal delivered 2 periode berturut-turut (Jun & Jul) dari tier/list/kartu (training model tetap pakai semua data, tidak kena filter ini)
+let FILTER_EXCLUDE_CREATED = true; // true = keluarkan user yang Created Jul > 0 (sudah convert bulan ini) dari tier/list/kartu
 
 // Baseline: bobot hasil training awal (Jun 2026), dipakai sebagai fallback & pembanding drift
 const BASELINE = {
@@ -322,7 +326,9 @@ function retrainModel(comboRaw){
 
 /* ============== DATA LOAD ============== */
 let DATA = []; // scored, eligible rows
-let excludedCount = 0;
+let excludedCount = 0; // dikecualikan via kolom Noted
+let excludedUndeliverable = 0; // dikecualikan via filter gagal kirim persisten
+let excludedCreated = 0; // dikecualikan karena sudah Created bulan ini
 let activeTier = null;
 let FUNNEL = {}; // stage -> {n, events} based on Jun (periode lengkap terakhir) untuk uji signifikansi
 let TIER_STATS = {}; // tier -> {n, sumProb, sumSentJul}
@@ -340,6 +346,8 @@ async function loadData(){
 
     DATA = [];
     excludedCount = 0;
+    excludedUndeliverable = 0;
+    excludedCreated = 0;
     FUNNEL = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
     TIER_STATS = {High:{n:0,sumProb:0,sumSentJul:0}, Medium:{n:0,sumProb:0,sumSentJul:0}, Low:{n:0,sumProb:0,sumSentJul:0}};
     SNAPSHOT_DAY_OF_MONTH = null;
@@ -367,13 +375,16 @@ async function loadData(){
       const sentJul = parseInt(r["Sent Jul"]) || 0;
       const deliveredJul = parseInt(r["Delivered Jul"]) || 0;
       const readJul = parseInt(r["Read Jul"]) || 0;
+      const createdJul = (parseInt(r["Created Jul"]) || 0) > 0 ? 1 : 0;
       const sentJun = parseInt(r["Sent Jun"]) || 0;
       const deliveredJun = parseInt(r["Delivered Jun"]) || 0;
       const readJun = parseInt(r["Read Jun"]) || 0;
       const createdJun = (parseInt(r["Created Jun"]) || 0) > 0 ? 1 : 0;
       const engJun = engagementStage(sentJun, deliveredJun, readJun);
+      // Sinyal nomor kemungkinan mati: gagal delivered di Jun DAN Jul, padahal sudah dicoba kirim di keduanya
+      const persistentNonDelivery = sentJun>0 && deliveredJun===0 && sentJul>0 && deliveredJul===0;
 
-      rawRows.push({custId, seg, sentJul, deliveredJul, readJul, engJun, createdJun});
+      rawRows.push({custId, seg, sentJul, deliveredJul, readJul, engJun, createdJun, createdJul, persistentNonDelivery});
 
       const comboKey = seg + "|" + engJun;
       if(!comboRaw[comboKey]) comboRaw[comboKey] = {pos:0, neg:0};
@@ -409,7 +420,12 @@ async function loadData(){
     }
 
     /* ---- PASS 2: scoring pakai kolom Jul (periode berjalan) + bobot AKTIF ---- */
+    /* Filter suppression & takeout-created HANYA berlaku di sini (populasi tampilan/tier),
+       TIDAK memengaruhi comboRaw di atas - supaya training model tetap pakai data lengkap. */
     rawRows.forEach(row => {
+      if(FILTER_SUPPRESS_UNDELIVERABLE && row.persistentNonDelivery){ excludedUndeliverable++; return; }
+      if(FILTER_EXCLUDE_CREATED && row.createdJul){ excludedCreated++; return; }
+
       const eng = engagementStage(row.sentJul, row.deliveredJul, row.readJul);
       const woeS = ACTIVE.woeSeg[row.seg] ?? 0;
       const woeE = ACTIVE.woeEng[eng] ?? 0;
@@ -442,7 +458,11 @@ function renderSummary(){
   const med = DATA.filter(d=>d.tier==="Medium").length;
   const low = DATA.filter(d=>d.tier==="Low").length;
   document.getElementById('cntTotal').textContent = total.toLocaleString('id-ID');
-  document.getElementById('cntExcluded').textContent = excludedCount>0 ? (excludedCount.toLocaleString('id-ID') + " dikecualikan (flag Noted)") : "Tidak ada user dikecualikan";
+  const parts = [];
+  if(excludedCount>0) parts.push(`${excludedCount.toLocaleString('id-ID')} flag Noted`);
+  if(excludedUndeliverable>0) parts.push(`${excludedUndeliverable.toLocaleString('id-ID')} gagal kirim persisten`);
+  if(excludedCreated>0) parts.push(`${excludedCreated.toLocaleString('id-ID')} sudah Created`);
+  document.getElementById('cntExcluded').textContent = parts.length ? (parts.join(', ') + ' dikecualikan') : 'Tidak ada user dikecualikan';
   document.getElementById('cntHigh').textContent = high.toLocaleString('id-ID');
   document.getElementById('cntMedium').textContent = med.toLocaleString('id-ID');
   document.getElementById('cntLow').textContent = low.toLocaleString('id-ID');
@@ -574,6 +594,7 @@ function renderAnalysis(){
       <div class="tier-name">${high.tier} Potential</div>
       <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(high.avgProb)}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${high.n.toLocaleString('id-ID')} (${fmtPct(high.n/totalN,1)})</span></div>
+      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span>~${Math.round(high.expected).toLocaleString('id-ID')}</span></div>
       <div class="why">Setiap pesan yang dikirim ke sini punya peluang convert tertinggi — cost per-conversion paling rendah. Kejar duluan, kalau budget terbatas ini yang harus tetap jalan.</div>
       <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${high.tier}')">Lihat Daftar User ID ↑</button>
     </div>
@@ -583,6 +604,7 @@ function renderAnalysis(){
       <div class="tier-name">${volRow.tier} Potential</div>
       <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(volRow.expected).toLocaleString('id-ID')}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${volRow.n.toLocaleString('id-ID')} (${fmtPct(volRow.n/totalN,1)})</span></div>
+      <div class="stat-line"><span class="k">Conversion rate</span><span>${fmtPct(volRow.avgProb)}</span></div>
       <div class="why">Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.</div>
       <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${volRow.tier}')">Lihat Daftar User ID ↑</button>
     </div>
@@ -592,6 +614,7 @@ function renderAnalysis(){
       <div class="tier-name">${low.tier} Potential</div>
       <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(low.avgProb)}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${low.n.toLocaleString('id-ID')} (${fmtPct(low.n/totalN,1)})</span></div>
+      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span>~${Math.round(low.expected).toLocaleString('id-ID')}</span></div>
       <div class="why">Cost per-conversion di sini paling mahal — kirim WA personal ke segmen ini kurang worth it. Turunkan prioritas, alihkan budget ke tier di atas.</div>
       <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${low.tier}')">Lihat Daftar User ID ↑</button>
     </div>`;
@@ -721,7 +744,31 @@ async function toggleRetrain(){
   await manualRefresh();
 }
 
+function updateSuppressButton(){
+  const btn = document.getElementById('suppressToggle');
+  btn.textContent = FILTER_SUPPRESS_UNDELIVERABLE ? '🟢 Filter Gagal Kirim: ON' : '⚪ Filter Gagal Kirim: OFF';
+  btn.title = 'Keluarkan user yang gagal delivered 2 periode berturut-turut (Jun & Jul) dari kartu/tier/list. Tidak memengaruhi training model.';
+}
+async function toggleSuppress(){
+  FILTER_SUPPRESS_UNDELIVERABLE = !FILTER_SUPPRESS_UNDELIVERABLE;
+  updateSuppressButton();
+  await manualRefresh();
+}
+
+function updateCreatedButton(){
+  const btn = document.getElementById('createdToggle');
+  btn.textContent = FILTER_EXCLUDE_CREATED ? '🟢 Takeout Sudah Created: ON' : '⚪ Takeout Sudah Created: OFF';
+  btn.title = 'Keluarkan user yang sudah Created bulan ini (Created Jul > 0) dari kartu/tier/list. Tidak memengaruhi training model.';
+}
+async function toggleExcludeCreated(){
+  FILTER_EXCLUDE_CREATED = !FILTER_EXCLUDE_CREATED;
+  updateCreatedButton();
+  await manualRefresh();
+}
+
 updateRetrainButton();
+updateSuppressButton();
+updateCreatedButton();
 loadData();
 // Auto-refresh berkala (sama seperti CRM Dashboard) - fetch ulang tanpa perlu aksi manual dari user
 setInterval(async ()=>{
