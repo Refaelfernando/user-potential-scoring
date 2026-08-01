@@ -152,6 +152,7 @@
     <div class="status" id="statusBox">
       <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#CFE3DC;">⟳ syncing...</span></div>
       <div id="totalRow">Total user dianalisis: <b>—</b></div>
+      <div id="diagRow" style="font-size:11px;opacity:.8;">Baris mentah: —</div>
     </div>
   </div>
   <div class="toolbar">
@@ -203,6 +204,19 @@
     </div>
   </div>
 
+  <div class="panel" style="margin-top:18px;">
+    <div class="panel-head">
+      <h2>🔍 Validasi Data per User</h2>
+      <div class="controls">
+        <input type="text" id="validateCustId" placeholder="Masukin Cust ID..." style="width:220px;" onkeydown="if(event.key==='Enter') runValidation()">
+        <button onclick="runValidation()">Cek</button>
+      </div>
+    </div>
+    <div id="validatePanelBody">
+      <div class="empty">Masukin Cust ID buat lihat rincian Sent/Delivered/Read/Created per bulan, dan channel sumber Created-nya.</div>
+    </div>
+  </div>
+
   <div class="analysis-panel">
     <h2>🎯 Segmen Mana yang Harus Dikejar?</h2>
     <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet — penjelasan kenapa tiap tier jadi prioritas (scroll ke atas buat ambil daftar User ID-nya).</div>
@@ -241,15 +255,22 @@
           </div>
           <div class="method-box">
             <div class="num" id="aucBox">—</div>
-            <div class="lbl">AUC (live)</div>
-            <div class="desc">Akurasi urutan skor model. &gt;80% = sangat kuat.</div>
+            <div class="lbl">AUC</div>
+            <div class="desc">Akurasi urutan skor model. &gt;80% = sangat kuat. Lihat "Evaluasi Model" di bawah untuk tau ini out-of-time atau in-sample.</div>
           </div>
           <div class="method-box">
             <div class="num" id="ksBox">—</div>
-            <div class="lbl">KS Statistic (live)</div>
+            <div class="lbl">KS Statistic</div>
             <div class="desc">Daya pisah converter vs non-converter. &gt;0,4 = kuat.</div>
           </div>
         </div>
+
+        <h3>Evaluasi Model: In-Sample vs Out-of-Time</h3>
+        <div class="insight-box" id="evalMethodBox">Menghitung...</div>
+
+        <h3>Uji Multikolinearitas (VIF)</h3>
+        <table class="stat-table" id="vifTable"><tbody><tr><td colspan="3">Menghitung...</td></tr></tbody></table>
+        <div class="insight-box" id="vifInsight">Menghitung insight...</div>
 
         <h3>Uji Signifikansi Tahap Funnel WhatsApp</h3>
         <table class="stat-table" id="funnelStatsTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
@@ -413,22 +434,40 @@ function getCreatedFlag(row){
 // hitung Segment per bulan itu, agregasi jadi comboRaw (Segment x Engagement -> pos/neg) & FUNNEL.
 // User yang sudah gak ada lagi di Eligible terbaru (mis. sudah lulus dari status eligible) otomatis
 // di-skip dari training bulan itu - keterbatasan data, bukan bug.
-async function buildTrainingFromDriveFiles(trainingMonthFiles, eligibleMap){
-  const comboRawArchive = {};
-  const funnelArchive = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
-  const loadedMonths = [];
-
-  for(const mf of trainingMonthFiles){
+// Fetch tiap file bulan SATU KALI, return per-bulan comboRaw terpisah (bukan digabung) - supaya
+// caller bisa milih mana yang jadi training set dan mana yang jadi holdout/test set (out-of-time
+// validation), tanpa perlu fetch ulang.
+function getCreatedSources(row){
+  const channels = [];
+  [["Created Organic","Organic"],["Created WhatsApp","WhatsApp"],["Created Telesales","Telesales"],["Created POM","POM"]].forEach(([col,label])=>{
+    if(col in row && (parseFloat(row[col])||0) > 0) channels.push(label);
+  });
+  return channels;
+}
+function recordCustHistory(custId, monthLabel, row){
+  if(!CUST_HISTORY[custId]) CUST_HISTORY[custId] = [];
+  CUST_HISTORY[custId].push({
+    month: monthLabel,
+    sent: parseInt(row["Sent"]) || 0,
+    delivered: parseInt(row["Delivered"]) || 0,
+    read: parseInt(row["Read"]) || 0,
+    created: getCreatedFlag(row),
+    sources: getCreatedSources(row)
+  });
+}
+async function buildPerMonthTrainingData(monthFiles, eligibleMap){
+  const perMonth = [];
+  for(const mf of monthFiles){
     const rows = await fetchSheetRows(mf.id);
     if(!rows) continue;
-    loadedMonths.push(mf.name);
     const refDate = new Date(mf.year, mf.monthNum, 0); // hari terakhir bulan itu
-
+    const comboRaw = {};
     rows.forEach(r=>{
       const custId = (r["Cust ID"]||"").toString().trim();
       if(!custId) return;
+      recordCustHistory(custId, mf.name, r); // rekam histori mentah - independen dari status eligible
       const pbDate = eligibleMap[custId];
-      if(!pbDate) return; // gak ketemu Paidback Date-nya (sudah gak eligible lagi) - skip
+      if(!pbDate) return; // gak ketemu Paidback Date-nya (sudah gak eligible lagi) - skip dari training
       const days = Math.floor((refDate - pbDate) / (1000*60*60*24));
       if(days < 0) return;
 
@@ -438,17 +477,58 @@ async function buildTrainingFromDriveFiles(trainingMonthFiles, eligibleMap){
       const read = parseInt(r["Read"]) || 0;
       const created = getCreatedFlag(r);
       const eng = engagementStage(sent, delivered, read);
-
       const key = seg + "|" + eng;
-      if(!comboRawArchive[key]) comboRawArchive[key] = {pos:0, neg:0};
-      if(created) comboRawArchive[key].pos++; else comboRawArchive[key].neg++;
-
-      funnelArchive[eng].n++;
-      funnelArchive[eng].events += created;
+      if(!comboRaw[key]) comboRaw[key] = {pos:0, neg:0};
+      if(created) comboRaw[key].pos++; else comboRaw[key].neg++;
     });
+    perMonth.push({name: mf.name, comboRaw});
   }
-
-  return {comboRawArchive, funnelArchive, monthsLoaded: loadedMonths.length, loadedMonths};
+  return perMonth;
+}
+function mergeCombos(comboList){
+  const merged = {};
+  comboList.forEach(combo=>{
+    for(const key in combo){
+      if(!merged[key]) merged[key] = {pos:0, neg:0};
+      merged[key].pos += combo[key].pos;
+      merged[key].neg += combo[key].neg;
+    }
+  });
+  return merged;
+}
+function comboToFunnel(combo){
+  const funnel = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
+  for(const key in combo){
+    const [,eng] = key.split("|");
+    funnel[eng].n += combo[key].pos + combo[key].neg;
+    funnel[eng].events += combo[key].pos;
+  }
+  return funnel;
+}
+// Uji multikolinearitas (VIF) antara 2 fitur (WOE Segment & WOE Engagement) yang dipakai model.
+// Dengan cuma 2 prediktor, VIF keduanya identik: 1/(1-r^2), r = korelasi terboboti antar fitur.
+function computeVIF(comboRaw){
+  const combos = Object.keys(comboRaw).map(key=>{
+    const [seg, eng] = key.split("|");
+    const n = comboRaw[key].pos + comboRaw[key].neg;
+    return {woeS: ACTIVE.woeSeg[seg] ?? 0, woeE: ACTIVE.woeEng[eng] ?? 0, n};
+  }).filter(c=>c.n>0);
+  const totalN = combos.reduce((s,c)=>s+c.n,0);
+  if(totalN===0) return null;
+  const meanS = combos.reduce((s,c)=>s+c.woeS*c.n,0)/totalN;
+  const meanE = combos.reduce((s,c)=>s+c.woeE*c.n,0)/totalN;
+  let cov=0, varS=0, varE=0;
+  combos.forEach(c=>{
+    cov += c.n*(c.woeS-meanS)*(c.woeE-meanE);
+    varS += c.n*(c.woeS-meanS)*(c.woeS-meanS);
+    varE += c.n*(c.woeE-meanE)*(c.woeE-meanE);
+  });
+  if(varS===0 || varE===0) return {r:0, vif:1};
+  let r = cov/Math.sqrt(varS*varE);
+  r = Math.max(-1, Math.min(1, r)); // clamp pembulatan floating-point
+  const r2 = r*r;
+  const vif = r2 > 0.999 ? Infinity : 1/(1-r2); // hindari ledakan angka akibat kolinearitas nyaris sempurna / kombinasi data terlalu sedikit
+  return {r, vif};
 }
 
 function engagementStage(sent, delivered, read){
@@ -566,6 +646,15 @@ let CUR_LABEL = null; // label token bulan periode berjalan (scoring), terdeteks
 let TRAIN_LABEL = null; // label token bulan periode training/validasi, terdeteksi otomatis dari sheet
 let ARCHIVE_MONTHS_LOADED = 0; // berapa bulan berhasil di-fetch dari sheet histori (0 = belum ke-setup/gagal semua)
 let ARCHIVE_TABS_LOADED = []; // nama tab yang berhasil dimuat, buat transparansi di UI
+let HAS_HOLDOUT = false; // true kalau AUC/KS dievaluasi pakai bulan holdout genuine (out-of-time), bukan in-sample
+let HOLDOUT_MONTH_LABEL = null; // nama bulan yang dijadikan holdout/test set
+let TRAIN_MONTHS_LABEL = null; // nama bulan-bulan yang beneran dipakai untuk retrain
+let VIF_RESULT = null; // {r, vif} - hasil uji multikolinearitas WOE Segment vs WOE Engagement
+let CUST_HISTORY = {}; // Cust ID -> [{month, sent, delivered, read, created, sources}, ...] - buat fitur validasi data per user
+let eligibleFile_lastMap = {}; // Cust ID -> Paidback Date, disimpan global buat dipakai fitur validasi
+let DIAG_ELIGIBLE_RAW_ROWS = 0; // jumlah baris mentah yang berhasil di-fetch dari file Eligible (diagnostik konsistensi)
+let DIAG_ELIGIBLE_UNIQUE_IDS = 0; // jumlah Cust ID unik setelah dedup (beda dari raw rows = ada duplikat)
+let DIAG_CURRENT_RAW_ROWS = 0; // jumlah baris mentah dari file bulan berjalan
 
 async function loadData(){
   const body = document.getElementById('panelBody');
@@ -585,10 +674,15 @@ async function loadData(){
     const eligibleRows = await fetchSheetRows(eligibleFile.id);
     if(!eligibleRows) throw new Error(`Gagal baca isi file "${eligibleFile.name}". Cek sharing-nya "Anyone with the link".`);
     const eligibleMap = buildEligibleMap(eligibleRows);
+    eligibleFile_lastMap = eligibleMap;
+    DIAG_ELIGIBLE_RAW_ROWS = eligibleRows.length;
+    DIAG_ELIGIBLE_UNIQUE_IDS = Object.keys(eligibleMap).length;
 
     /* ---- 3. Fetch file bulan berjalan (current) -> Cust ID -> {sent,delivered,read} ---- */
     const currentRows = await fetchSheetRows(currentMonthFile.id);
+    DIAG_CURRENT_RAW_ROWS = currentRows ? currentRows.length : 0;
     const currentEngMap = {};
+    CUST_HISTORY = {};
     if(currentRows){
       currentRows.forEach(r=>{
         const custId = (r["Cust ID"]||"").toString().trim();
@@ -599,6 +693,7 @@ async function loadData(){
           read: parseInt(r["Read"]) || 0,
           createdNow: getCreatedFlag(r)
         };
+        recordCustHistory(custId, currentMonthFile.name + ' (berjalan)', r);
       });
     }
 
@@ -612,30 +707,56 @@ async function loadData(){
     SNAPSHOT_DAY_OF_MONTH = new Date().getDate(); // file bulan berjalan diupdate rutin - pakai tanggal hari ini
     WEEKS_ELAPSED = Math.max(SNAPSHOT_DAY_OF_MONTH, 1) / 7;
 
-    /* ---- 4. Training multi-bulan dari file-file bulan lengkap sebelumnya ---- */
-    const training = await buildTrainingFromDriveFiles(trainingMonthFiles, eligibleMap);
-    const trainingComboRaw = training.comboRawArchive;
-    FUNNEL = training.funnelArchive;
-    ARCHIVE_MONTHS_LOADED = training.monthsLoaded;
-    ARCHIVE_TABS_LOADED = training.loadedMonths;
+    /* ---- 4. Training multi-bulan: fetch per-bulan, lalu split train vs holdout (out-of-time) ---- */
+    const perMonth = await buildPerMonthTrainingData(trainingMonthFiles, eligibleMap);
+    ARCHIVE_MONTHS_LOADED = perMonth.length;
+    ARCHIVE_TABS_LOADED = perMonth.map(m=>m.name);
 
-    /* ---- 5. RETRAIN (kalau diaktifkan) ---- */
+    let comboRawTrain, comboRawTest;
+    if(perMonth.length >= 2){
+      // Holdout = bulan TERAKHIR dari data training (paling baru tapi tetap "lengkap") - TIDAK
+      // ikut dilatih, dipakai murni buat validasi out-of-time (genuinely belum pernah dilihat model)
+      const holdout = perMonth[perMonth.length-1];
+      const trainMonths = perMonth.slice(0, -1);
+      comboRawTrain = mergeCombos(trainMonths.map(m=>m.comboRaw));
+      comboRawTest = holdout.comboRaw;
+      HAS_HOLDOUT = true;
+      HOLDOUT_MONTH_LABEL = holdout.name;
+      TRAIN_MONTHS_LABEL = trainMonths.map(m=>m.name).join(', ');
+    } else if(perMonth.length === 1){
+      comboRawTrain = perMonth[0].comboRaw;
+      comboRawTest = perMonth[0].comboRaw; // data sama - evaluasi jadi in-sample, bukan genuine holdout
+      HAS_HOLDOUT = false;
+      HOLDOUT_MONTH_LABEL = null;
+      TRAIN_MONTHS_LABEL = perMonth[0].name;
+    } else {
+      comboRawTrain = {}; comboRawTest = {};
+      HAS_HOLDOUT = false; HOLDOUT_MONTH_LABEL = null; TRAIN_MONTHS_LABEL = null;
+    }
+    // FUNNEL (buat uji signifikansi tahap funnel) pakai SEMUA bulan digabung - beda tujuan dari
+    // AUC/KS (itu butuh data belum-pernah-dilihat, ini cuma butuh power statistik sebanyak mungkin)
+    FUNNEL = comboToFunnel(mergeCombos(perMonth.map(m=>m.comboRaw)));
+
+    /* ---- 5. RETRAIN (kalau diaktifkan) - HANYA pakai comboRawTrain, bukan gabungan penuh,
+       supaya comboRawTest (holdout) beneran belum pernah dilihat model saat retrain ---- */
     if(AUTO_RETRAIN){
-      const retrained = retrainModel(trainingComboRaw);
+      const retrained = retrainModel(comboRawTrain);
       ACTIVE = retrained || BASELINE;
     } else {
       ACTIVE = BASELINE;
     }
     LAST_TRAINED_AT = new Date();
+    VIF_RESULT = computeVIF(comboRawTrain);
 
-    /* ---- 6. COMBO_JUN (validasi AUC/KS live, konsisten dgn bobot AKTIF) ---- */
+    /* ---- 6. COMBO_JUN: AUC/KS dihitung dari comboRawTest (holdout out-of-time kalau tersedia,
+       fallback in-sample kalau cuma ada 1 bulan training) ---- */
     COMBO_JUN = {};
-    for(const key in trainingComboRaw){
+    for(const key in comboRawTest){
       const [seg, eng] = key.split("|");
       const woeS = ACTIVE.woeSeg[seg] ?? 0;
       const woeE = ACTIVE.woeEng[eng] ?? 0;
       const prob = sigmoid(ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE);
-      COMBO_JUN[key] = {prob, pos: trainingComboRaw[key].pos, neg: trainingComboRaw[key].neg};
+      COMBO_JUN[key] = {prob, pos: comboRawTest[key].pos, neg: comboRawTest[key].neg};
     }
 
     /* ---- 7. SCORING: iterasi roster Eligible, join ke engagement bulan berjalan, cek 3 filter, skor ---- */
@@ -689,6 +810,9 @@ function renderSummary(){
   const total = DATA.length;
   const high = DATA.filter(d=>d.tier==="High").length;
   const med = DATA.filter(d=>d.tier==="Medium").length;
+  const dupCount = DIAG_ELIGIBLE_RAW_ROWS - DIAG_ELIGIBLE_UNIQUE_IDS;
+  const dupNote = dupCount > 0 ? ` (⚠️ ada ${dupCount.toLocaleString('id-ID')} duplikat Cust ID)` : ' (✅ tidak ada duplikat)';
+  document.getElementById('diagRow').innerHTML = `Baris mentah — Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote} | Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')}</b>`;
   const low = DATA.filter(d=>d.tier==="Low").length;
   document.getElementById('cntTotal').textContent = total.toLocaleString('id-ID');
   const parts = [];
@@ -803,8 +927,8 @@ function renderAnalysis(){
     ? `<b>Mode: Auto-retrain AKTIF.</b> Model dilatih ulang otomatis setiap dashboard di-refresh. Terakhir dilatih: <b>${LAST_TRAINED_AT ? LAST_TRAINED_AT.toLocaleString('id-ID') : '—'}</b>.`
     : `<b>Mode: Bobot tetap (manual).</b> Model TIDAK dilatih ulang otomatis — pakai bobot baseline hasil training awal.`;
   const archiveTxt = ARCHIVE_MONTHS_LOADED > 0
-    ? ` 📚 Training pakai sheet histori: <b>${ARCHIVE_MONTHS_LOADED} bulan</b> berhasil dimuat (${ARCHIVE_TABS_LOADED.join(', ')}).`
-    : ` ℹ️ Sheet histori belum ke-setup/belum kebaca — training masih pakai 1 bulan dari sheet eligible (<code>${TRAIN_LABEL||'-'}</code>).`;
+    ? ` 📚 Training pakai file bulanan dari folder Drive: <b>${ARCHIVE_MONTHS_LOADED} bulan</b> berhasil dimuat (${ARCHIVE_TABS_LOADED.join(', ')}).`
+    : ` ⚠️ Belum ada file bulanan lengkap yang berhasil dimuat dari folder Drive — cek nama file & sharing-nya.`;
   const driftTxt = AUTO_RETRAIN
     ? (drift
         ? ` ⚠️ Bobot saat ini <b>bergeser cukup jauh</b> dari baseline awal — cek tabel di bawah &amp; pertimbangkan validasi manual sebelum dipakai untuk keputusan besar.`
@@ -818,9 +942,38 @@ function renderAnalysis(){
       <tr><td>Koefisien Engagement</td><td>${BASELINE.coef.eng.toFixed(3)}</td><td>${ACTIVE.coef.eng.toFixed(3)}</td></tr>
     </tbody></table>`;
   document.getElementById('trainingStatusBox').innerHTML = modeTxt + archiveTxt + driftTxt + perbandingan +
-    `<div style="margin-top:10px;font-size:11.5px;">ℹ️ Kolom periode terdeteksi otomatis: <code>${TRAIN_LABEL||'-'}</code> (training/validasi) dan <code>${CUR_LABEL||'-'}</code> (scoring/periode berjalan) — dashboard ikutin nama kolom bulan apa pun yang ada di sheet, gak perlu edit kode tiap bulan. ⚠️ Kalau histori sudah lebih dari 12 bulan, sertakan tahun di nama kolom (mis. "Sent Jun26") supaya gak ambigu antar tahun.</div>`;
+    `<div style="margin-top:10px;font-size:11.5px;">ℹ️ File periode terdeteksi otomatis dari folder Drive: <code>${TRAIN_MONTHS_LABEL||'-'}</code> (training) dan <code>${CUR_LABEL||'-'}</code> (scoring/periode berjalan) — dashboard ikutin file apa pun yang ada di folder "Scoring", gak perlu edit kode tiap bulan file baru ditambahkan.</div>`;
 
-  /* ---- 0b. Validasi live model terhadap outcome Jun aktual ---- */
+  /* ---- 0b-i. Evaluasi: in-sample vs out-of-time ---- */
+  const evalBox = document.getElementById('evalMethodBox');
+  if(HAS_HOLDOUT){
+    evalBox.innerHTML = `✅ <b>Evaluasi OUT-OF-TIME (genuine holdout).</b> Model dilatih pakai bulan <b>${TRAIN_MONTHS_LABEL}</b>, lalu diuji ke bulan <b>${HOLDOUT_MONTH_LABEL}</b> yang <u>sama sekali gak ikut dilatih</u> — jadi AUC/KS di atas mencerminkan performa ke data yang beneran belum pernah dilihat model, bukan angka yang di-"nyontek" dari data training sendiri.`;
+  } else {
+    evalBox.innerHTML = `⚠️ <b>Evaluasi masih IN-SAMPLE (belum ada train-test split).</b> Baru ada 1 bulan data training (${TRAIN_MONTHS_LABEL||'-'}), jadi AUC/KS di atas dihitung dari data yang SAMA dipakai buat melatih model — ini cenderung <b>overestimate</b> performa asli (angkanya kelihatan lebih bagus dari kenyataan). Begitu ada ≥2 bulan data training, dashboard otomatis pindah ke evaluasi out-of-time (1 bulan disisihkan jadi holdout, gak ikut dilatih) tanpa perlu setting apa pun.`;
+  }
+
+  /* ---- 0b-ii. Uji multikolinearitas (VIF) ---- */
+  const vifBox = document.getElementById('vifInsight');
+  if(VIF_RESULT){
+    const {r, vif} = VIF_RESULT;
+    const vifTxt = isFinite(vif) ? vif.toFixed(2) : '∞ (kolinearitas nyaris sempurna)';
+    document.getElementById('vifTable').innerHTML = `<thead><tr>
+        <th>Fitur</th><th>VIF</th><th>Korelasi dengan fitur lain</th>
+      </tr></thead><tbody>
+        <tr><td>WOE Segment</td><td>${vifTxt}</td><td rowspan="2" style="vertical-align:middle;">${r.toFixed(3)}</td></tr>
+        <tr><td>WOE Engagement</td><td>${vifTxt}</td></tr>
+      </tbody>`;
+    let verdict, color;
+    if(!isFinite(vif) || vif >= 10){ verdict = 'Tinggi — kedua fitur kemungkinan besar saling redundan, koefisien model bisa gak stabil. Kalau ini muncul terus-terusan, kemungkinan data training-nya masih terlalu sedikit kombinasi Segment x Engagement yang berbeda.'; color = 'var(--low)'; }
+    else if(vif >= 5){ verdict = 'Sedang — mulai perlu diwaspadai, tapi belum kritis.'; color = 'var(--med)'; }
+    else { verdict = 'Rendah — tidak ada indikasi masalah multikolinearitas.'; color = 'var(--high)'; }
+    vifBox.innerHTML = `<b>VIF (Variance Inflation Factor)</b> = 1/(1-r²) antara kedua fitur (cuma ada 2 prediktor, jadi VIF-nya identik untuk keduanya). Aturan umum: VIF&lt;5 = aman, 5-10 = waspada, &gt;10 = serius. <b style="color:${color};">${verdict}</b>`;
+  } else {
+    document.getElementById('vifTable').innerHTML = '<tbody><tr><td>Data training belum cukup buat hitung VIF.</td></tr></tbody>';
+    vifBox.innerHTML = '';
+  }
+
+  /* ---- 0b-iii. Validasi live model terhadap outcome Jun aktual ---- */
   const {auc, ks} = computeLiveAucKs();
   document.getElementById('aucBox').textContent = auc===null ? 'n/a' : fmtPct(auc, 1);
   document.getElementById('ksBox').textContent = ks===null ? 'n/a' : ks.toFixed(2);
@@ -1048,6 +1201,44 @@ function exportCSV(){
   a.href = URL.createObjectURL(blob);
   a.download = `user_potential_${activeTier}${activeSubtier?'_'+activeSubtier:''}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
+}
+
+function runValidation(){
+  const body = document.getElementById('validatePanelBody');
+  const custId = document.getElementById('validateCustId').value.trim();
+  if(!custId){
+    body.innerHTML = '<div class="empty">Masukin Cust ID buat lihat rincian Sent/Delivered/Read/Created per bulan, dan channel sumber Created-nya.</div>';
+    return;
+  }
+  const history = CUST_HISTORY[custId];
+  if(!history || history.length === 0){
+    body.innerHTML = `<div class="empty">Cust ID <b>${custId}</b> gak ketemu di file bulanan manapun yang berhasil dimuat (cek lagi ID-nya, atau kemungkinan user ini belum pernah dikirim pesan sama sekali).</div>`;
+    return;
+  }
+  const totalSent = history.reduce((s,h)=>s+h.sent,0);
+  const totalDelivered = history.reduce((s,h)=>s+h.delivered,0);
+  const totalRead = history.reduce((s,h)=>s+h.read,0);
+  const totalCreated = history.reduce((s,h)=>s+h.created,0);
+  const allSources = [...new Set(history.flatMap(h=>h.sources))];
+  const eligible = eligibleFile_lastMap && eligibleFile_lastMap[custId];
+
+  let html = `<div style="padding:16px 20px;">
+    <div class="gap-summary" style="margin-bottom:16px;">
+      <div class="row"><span>Total Sent</span><b>${totalSent.toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Total Delivered</span><b>${totalDelivered.toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Total Read</span><b>${totalRead.toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Total Created</span><b>${totalCreated.toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Created Source</span><b>${allSources.length ? allSources.join(', ') : (totalCreated>0 ? 'Ada Created tapi channel-nya gak ke-tag di data' : '—')}</b></div>
+      ${eligible ? `<div class="row"><span>Paidback Date (dari roster Eligible)</span><b>${eligible.toISOString().slice(0,10)}</b></div>` : '<div class="row"><span>Status Eligible</span><b>Gak ketemu di roster Eligible saat ini</b></div>'}
+    </div>
+    <table class="stat-table"><thead><tr>
+        <th>Bulan</th><th>Sent</th><th>Delivered</th><th>Read</th><th>Created</th><th>Created Source</th>
+      </tr></thead><tbody>
+        ${history.map(h=>`<tr><td>${h.month}</td><td>${h.sent}</td><td>${h.delivered}</td><td>${h.read}</td>
+          <td>${h.created ? '✅' : '—'}</td><td>${h.sources.length ? h.sources.join(', ') : '—'}</td></tr>`).join('')}
+      </tbody></table>
+  </div>`;
+  body.innerHTML = html;
 }
 
 async function manualRefresh(){
