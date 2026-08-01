@@ -9,14 +9,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
   :root{
-    --bg1:#F2EFFF; --bg2:#EAFBF5; --ink:#1E1B2E; --muted:#726F8C;
-    --grad1:#7C5CFF; --grad2:#B15CFF; --grad3:#FF5CA8;
-    --high:#00B37E; --high-bg:#DFFBEF; --high-line:#9CEFCB;
-    --med:#FF8A00; --med-bg:#FFF1DC; --med-line:#FFD79A;
-    --low:#FF4D6D; --low-bg:#FFE4EA; --low-line:#FFB8C6;
-    --line:#E9E5FB; --card:#FFFFFF;
-    --shadow:0 6px 20px rgba(124,92,255,.10);
-    --shadow-lg:0 14px 34px rgba(124,92,255,.16);
+    --bg1:#F5F3EE; --bg2:#EDF1EF; --ink:#22262E; --muted:#6B7280;
+    --grad1:#2E4057; --grad2:#3E5C76; --grad3:#5B7B78;
+    --high:#3E7C59; --high-bg:#E6EFE9; --high-line:#BFD9CB;
+    --med:#A6772C; --med-bg:#F3EBDD; --med-line:#E0C79A;
+    --low:#A14A4A; --low-bg:#F3E4E4; --low-line:#E0BABA;
+    --line:#E3E1DC; --card:#FFFFFF; --tint:#F7F6F3;
+    --shadow:0 6px 20px rgba(30,38,50,.08);
+    --shadow-lg:0 14px 34px rgba(30,38,50,.14);
   }
   *{box-sizing:border-box;}
   body{margin:0;font-family:'Plus Jakarta Sans',Arial,sans-serif;background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 100%);background-attachment:fixed;color:var(--ink);}
@@ -53,13 +53,13 @@
   input[type=text]{padding:8px 14px;border:1.5px solid var(--line);border-radius:999px;font-size:13px;width:220px;font-family:inherit;}
   select{padding:8px 14px;border:1.5px solid var(--line);border-radius:999px;font-size:13px;font-family:inherit;background:#fff;}
   button{padding:9px 18px;border:none;background:linear-gradient(120deg,var(--grad1),var(--grad2));color:#fff;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:transform .12s ease, box-shadow .12s ease;}
-  button:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(124,92,255,.35);}
+  button:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(30,38,50,.25);}
   button.ghost{background:#fff;color:var(--grad1);border:1.5px solid var(--line);}
-  button.ghost:hover{box-shadow:0 6px 16px rgba(124,92,255,.15);}
+  button.ghost:hover{box-shadow:0 6px 16px rgba(30,38,50,.12);}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  thead th{text-align:left;background:#FAF9FF;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:11px 22px;border-bottom:1px solid var(--line);position:sticky;top:0;}
-  tbody td{padding:10px 22px;border-bottom:1px solid #F3F1FC;}
-  tbody tr:hover{background:#FAF9FF;}
+  thead th{text-align:left;background:var(--tint);color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:11px 22px;border-bottom:1px solid var(--line);position:sticky;top:0;}
+  tbody td{padding:10px 22px;border-bottom:1px solid #EEECE6;}
+  tbody tr:hover{background:var(--tint);}
   .tbl-wrap{max-height:520px;overflow:auto;}
   .tier-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;}
   .tier-pill.High{background:var(--high-bg);color:var(--high);}
@@ -69,7 +69,7 @@
   .err{color:var(--low);}
   footer{max-width:1180px;margin:0 auto;padding:0 20px 40px;font-size:11px;color:var(--muted);line-height:1.6;}
   .foot-panel{background:var(--card);border-radius:20px;padding:18px 22px;margin-top:18px;box-shadow:var(--shadow);}
-  code{background:#F3F1FC;padding:1px 6px;border-radius:6px;}
+  code{background:#EEECE6;padding:1px 6px;border-radius:6px;}
   .analysis-panel{background:var(--card);border-radius:20px;box-shadow:var(--shadow);padding:26px 28px;margin-top:18px;}
   .analysis-panel h2{font-size:19px;margin:0 0 4px;}
   .analysis-panel .lead{font-size:12.5px;color:var(--muted);margin-bottom:20px;}
@@ -93,38 +93,38 @@
   /* Tier action table */
   .action-table{width:100%;border-collapse:collapse;font-size:13px;}
   .action-table th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:9px 16px;border-bottom:2px solid var(--line);}
-  .action-table td{padding:13px 16px;border-bottom:1px solid #F3F1FC;vertical-align:top;}
+  .action-table td{padding:13px 16px;border-bottom:1px solid #EEECE6;vertical-align:top;}
   .action-table tr:last-child td{border-bottom:none;}
   .freq-badge{display:inline-block;font-weight:700;font-size:13px;}
   .freq-note{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
 
   /* Collapsible technical evidence */
   details.tech-details{margin-top:26px;border:1.5px solid var(--line);border-radius:16px;overflow:hidden;}
-  details.tech-details summary{cursor:pointer;padding:13px 18px;font-size:12.5px;font-weight:700;color:var(--grad1);background:#FAF9FF;list-style:none;display:flex;align-items:center;gap:6px;}
+  details.tech-details summary{cursor:pointer;padding:13px 18px;font-size:12.5px;font-weight:700;color:var(--grad1);background:var(--tint);list-style:none;display:flex;align-items:center;gap:6px;}
   details.tech-details summary::-webkit-details-marker{display:none;}
   details.tech-details summary:before{content:"▸";transition:transform .15s;}
   details.tech-details[open] summary:before{transform:rotate(90deg);}
   details.tech-details .tech-body{padding:20px 22px;}
   .stat-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:12px;}
-  .stat-table th{text-align:left;background:#FAF9FF;color:var(--muted);font-weight:700;font-size:10.5px;text-transform:uppercase;padding:9px 12px;border-bottom:1px solid var(--line);}
-  .stat-table td{padding:9px 12px;border-bottom:1px solid #F3F1FC;}
+  .stat-table th{text-align:left;background:var(--tint);color:var(--muted);font-weight:700;font-size:10.5px;text-transform:uppercase;padding:9px 12px;border-bottom:1px solid var(--line);}
+  .stat-table td{padding:9px 12px;border-bottom:1px solid #EEECE6;}
   .sig-yes{color:var(--high);font-weight:700;}
   .sig-no{color:var(--muted);font-weight:700;}
-  .insight-box{background:#F2EFFF;border-left:3px solid var(--grad1);padding:11px 15px;font-size:12.5px;border-radius:0 12px 12px 0;margin:10px 0;line-height:1.5;}
+  .insight-box{background:var(--tint);border-left:3px solid var(--grad1);padding:11px 15px;font-size:12.5px;border-radius:0 12px 12px 0;margin:10px 0;line-height:1.5;}
   .method-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px;}
-  .method-box{background:#FAF9FF;border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;}
+  .method-box{background:var(--tint);border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;}
   .method-box .num{font-size:18px;font-weight:800;color:var(--grad1);}
   .method-box .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:2px;}
   .method-box .desc{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4;}
 
   /* Medium sub-tier breakdown */
   .subtier-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:12px 0 16px;}
-  .subtier-chip{border-radius:14px;padding:12px 14px;font-size:12px;cursor:pointer;border:1.5px solid var(--line);background:#FAF9FF;transition:transform .12s ease;}
+  .subtier-chip{border-radius:14px;padding:12px 14px;font-size:12px;cursor:pointer;border:1.5px solid var(--line);background:var(--tint);transition:transform .12s ease;}
   .subtier-chip:hover{transform:translateY(-2px);}
-  .subtier-chip.active{border-color:var(--grad1);box-shadow:0 0 0 3px rgba(124,92,255,.15);}
+  .subtier-chip.active{border-color:var(--grad1);box-shadow:0 0 0 3px rgba(30,38,50,.12);}
   .subtier-chip .st-name{font-weight:700;font-size:13px;margin-bottom:4px;}
   .subtier-chip .st-stat{color:var(--muted);}
-  .subtier-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:#F2EFFF;color:var(--grad1);}
+  .subtier-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:var(--tint);color:var(--grad1);}
 </style>
 </head>
 <body>
@@ -136,7 +136,7 @@
       <div class="sub">Cari tahu siapa yang paling potensial buat di-follow up — otomatis update dari data terbaru</div>
     </div>
     <div class="status" id="statusBox">
-      <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#D9FBEC;">⟳ syncing...</span></div>
+      <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#CFE3DC;">⟳ syncing...</span></div>
       <div id="totalRow">Total user dianalisis: <b>—</b></div>
     </div>
   </div>
