@@ -125,6 +125,20 @@
   .subtier-chip .st-name{font-weight:700;font-size:13px;margin-bottom:4px;}
   .subtier-chip .st-stat{color:var(--muted);}
   .subtier-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:var(--tint);color:var(--grad1);}
+
+  /* Target gap calculator */
+  .gap-summary{border-radius:16px;padding:16px 20px;margin-bottom:14px;background:var(--tint);border:1.5px solid var(--line);}
+  .gap-summary .row{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:13px;padding:4px 0;}
+  .gap-summary .row b{font-size:15px;}
+  .gap-summary.over{background:var(--high-bg);border-color:var(--high-line);}
+  .scenario-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+  .scenario-card{border-radius:16px;padding:16px 18px;border:1.5px solid var(--line);background:#fff;box-shadow:var(--shadow);}
+  .scenario-card h4{margin:0 0 8px;font-size:13.5px;color:var(--grad1);}
+  .scenario-card .big-num{font-size:24px;font-weight:800;margin:6px 0;}
+  .scenario-card .feas{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;margin-top:6px;}
+  .scenario-card .feas.ok{background:var(--high-bg);color:var(--high);}
+  .scenario-card .feas.warn{background:var(--low-bg);color:var(--low);}
+  .scenario-card p{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 0;}
 </style>
 </head>
 <body>
@@ -145,6 +159,7 @@
     <button id="retrainToggle" class="pill-btn" onclick="toggleRetrain()">Auto-Retrain: —</button>
     <button id="suppressToggle" class="pill-btn" onclick="toggleSuppress()">Filter Gagal Kirim: —</button>
     <button id="createdToggle" class="pill-btn" onclick="toggleExcludeCreated()">Takeout Sudah Created: —</button>
+    <button id="freqCapToggle" class="pill-btn" onclick="toggleFreqCap()">Takeout Kena Cap Frekuensi: —</button>
   </div>
 </header>
 
@@ -197,6 +212,16 @@
     </div>
 
     <div class="analysis-sub">
+      <h3>🎯 Kalkulator Target Bulanan</h3>
+      <div class="lead" style="margin-bottom:12px;">Isi target Created bulan ini, sistem bandingin ke perkiraan konversi saat ini &amp; kasih rekomendasi kuantitatif buat nutup gap-nya. <i>Catatan jujur: ini kalkulator simulasi berbasis data historis, bukan model yang "belajar" dari angka target itu sendiri — target cuma jadi patokan, bukan data latih.</i></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+        <label for="targetInput" style="font-size:13px;font-weight:600;">Target Created / bulan:</label>
+        <input type="number" id="targetInput" min="0" placeholder="mis. 2000" style="width:160px;" oninput="renderGapCalculator()">
+      </div>
+      <div id="gapCalcResult"></div>
+    </div>
+
+    <div class="analysis-sub">
       <h3>Rekomendasi Aksi &amp; Frekuensi Kontak per Segmen</h3>
       <table class="action-table" id="actionTable"><tbody><tr><td>Menghitung...</td></tr></tbody></table>
     </div>
@@ -232,7 +257,7 @@
 
         <h3>Profil Lengkap Tier</h3>
         <table class="stat-table" id="tierProfileTable"><tbody><tr><td colspan="5">Menghitung...</td></tr></tbody></table>
-        <div class="insight-box">Angka "baseline kirim saat ini" di tabel aksi dihitung dari rata-rata Sent Jul per user ÷ estimasi minggu berjalan. Angka rekomendasi frekuensi = baseline data + kaidah umum anti-fatigue campaign (bukan murni statistik) — sebaiknya divalidasi A/B test kecil dulu, terutama untuk tier Medium.</div>
+        <div class="insight-box">Angka "baseline kirim saat ini" di tabel aksi dihitung dari rata-rata Sent Jul per user ÷ estimasi minggu berjalan. Angka rekomendasi frekuensi = baseline data + kaidah umum anti-fatigue campaign (bukan murni statistik) — sebaiknya divalidasi A/B test kecil dulu, terutama untuk tier Medium. Kolom "Konten/Keyword Hari Ini" berisi angle pesan yang rotasi otomatis tiap hari (beda per tier) dari pool 5 tema (dana darurat, kebutuhan mendesak, modal usaha, pendidikan, renovasi) — ini draft angle, bukan copy final; sebaiknya tetap direview tim compliance/legal sebelum dipakai, terutama terkait aturan periklanan pinjaman online yang berlaku.</div>
       </div>
     </details>
   </div>
@@ -280,6 +305,8 @@ function twoPropZTest(x1,n1,x2,n2){
 let AUTO_RETRAIN = true; // true = model dilatih ulang otomatis tiap refresh dari data live. false = pakai bobot baseline tetap. Bisa di-toggle lewat tombol "Auto-Retrain" di header.
 let FILTER_SUPPRESS_UNDELIVERABLE = true; // true = keluarkan user yang gagal delivered 2 periode berturut-turut (Jun & Jul) dari tier/list/kartu (training model tetap pakai semua data, tidak kena filter ini)
 let FILTER_EXCLUDE_CREATED = true; // true = keluarkan user yang Created Jul > 0 (sudah convert bulan ini) dari tier/list/kartu
+let FILTER_FREQ_CAP = true; // true = keluarkan user yang perkiraan frekuensi kirim mingguannya udah lewat rekomendasi cap tier-nya
+const FREQ_CAP = {High: 2, Medium: 3, Low: 1}; // cap max x/minggu sesuai rekomendasi di tabel aksi
 
 // Baseline: bobot hasil training awal (Jun 2026), dipakai sebagai fallback & pembanding drift
 const BASELINE = {
@@ -303,6 +330,34 @@ function engagementStage(sent, delivered, read){
   return "NotSent";
 }
 function sigmoid(x){ return 1/(1+Math.exp(-x)); }
+
+// Pool keyword/angle konten - campuran 5 tema (dana darurat, kebutuhan mendesak, modal usaha,
+// pendidikan, renovasi). Dipilih beda tiap hari (rotasi harian) & beda per tier di hari yang sama,
+// supaya kontennya gak keliatan itu-itu terus tapi tetap konsisten sepanjang hari itu.
+const KEYWORD_POOL = [
+  "Dana darurat cair hari ini — jangan tunda kebutuhan mendesak",
+  "Butuh modal usaha tambahan? Cair cepat, cicilan ringan",
+  "Biaya sekolah/kuliah sudah di depan mata — ajukan sekarang, jangan nunggu mepet",
+  "Rumah butuh renovasi? Gak perlu nunggu tabungan penuh, ajukan sekarang",
+  "Kebutuhan mendadak datang gak kenal waktu — solusi cair dalam hitungan jam",
+  "Modal usaha buat naikin omzet bulan ini, prosesnya cepat & mudah",
+  "Biaya pendidikan anak gak harus jadi beban sendirian — ada solusi cepat",
+  "Renovasi yang tertunda? Sekarang saatnya wujudkan tanpa nunggu lama",
+  "Dana darurat siap kapan aja kamu butuh, proses cepat tanpa ribet",
+  "Kebutuhan mendesak bikin panik? Ada solusi cair cepat buat kamu",
+  "Mau buka/kembangin usaha kecil? Modalnya bisa cair cepat",
+  "Kebutuhan sekolah anak jangan sampai keteteran — ajukan dari sekarang",
+  "Renovasi dapur/kamar mandi yang lama ditunda, sekarang bisa direalisasikan",
+  "Kepepet kebutuhan tak terduga? Cair cepat, syarat mudah",
+  "Tambahan modal usaha buat stok/operasional, prosesnya simpel"
+];
+function getDailyKeyword(offset){
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((now - start) / 86400000);
+  const idx = ((dayOfYear + offset) % KEYWORD_POOL.length + KEYWORD_POOL.length) % KEYWORD_POOL.length;
+  return KEYWORD_POOL[idx];
+}
 
 // Pecah tier Medium jadi 3 sub-band (Tinggi/Sedang/Rendah) berdasarkan tercile propensity score -
 // dihitung ulang tiap load supaya selalu proporsional ke populasi Medium saat ini.
@@ -376,6 +431,9 @@ let FUNNEL = {}; // stage -> {n, events} based on Jun (periode lengkap terakhir)
 let TIER_STATS = {}; // tier -> {n, sumProb, sumSentJul}
 let COMBO_JUN = {}; // "seg|engJun" -> {prob, pos, neg} - untuk validasi AUC/KS live
 let SNAPSHOT_DAY_OF_MONTH = null; // dari kolom Date, dipakai estimasi frekuensi kirim/minggu
+let excludedFreqCap = 0; // dikecualikan karena sudah kena cap frekuensi mingguan tier-nya
+let JUL_ENG_COUNTS = {NotSent:0, Sent:0, Delivered:0, Read:0}; // populasi saat ini (Jul, setelah filter) per tahap engagement - dipakai kalkulator target
+let WEEKS_ELAPSED = 3; // estimasi minggu berjalan periode Jul, dihitung tiap load
 
 async function loadData(){
   const body = document.getElementById('panelBody');
@@ -390,6 +448,8 @@ async function loadData(){
     excludedCount = 0;
     excludedUndeliverable = 0;
     excludedCreated = 0;
+    excludedFreqCap = 0;
+    JUL_ENG_COUNTS = {NotSent:0, Sent:0, Delivered:0, Read:0};
     FUNNEL = {NotSent:{n:0,events:0}, Sent:{n:0,events:0}, Delivered:{n:0,events:0}, Read:{n:0,events:0}};
     TIER_STATS = {High:{n:0,sumProb:0,sumSentJul:0}, Medium:{n:0,sumProb:0,sumSentJul:0}, Low:{n:0,sumProb:0,sumSentJul:0}};
     SNAPSHOT_DAY_OF_MONTH = null;
@@ -442,6 +502,8 @@ async function loadData(){
       }
     });
 
+    WEEKS_ELAPSED = Math.max(SNAPSHOT_DAY_OF_MONTH || 21, 1) / 7; // estimasi minggu berjalan periode Jul
+
     /* ---- RETRAIN (kalau diaktifkan) - sebelum scoring, supaya scoring pakai bobot terbaru ---- */
     if(AUTO_RETRAIN){
       const retrained = retrainModel(comboRaw);
@@ -477,16 +539,23 @@ async function loadData(){
       if(p >= TIER_CUTOFF_HIGH) tier = "High";
       else if(p >= TIER_CUTOFF_MED) tier = "Medium";
 
+      // Cap frekuensi: estimasi berapa x/minggu user ini sudah dikirim bulan ini, dibanding
+      // rekomendasi max per tier-nya (FREQ_CAP). Kalau sudah lewat, jangan ditawarkan lagi minggu ini.
+      const estWeeklyRate = row.sentJul / WEEKS_ELAPSED;
+      if(FILTER_FREQ_CAP && estWeeklyRate > FREQ_CAP[tier]){ excludedFreqCap++; return; }
+
       DATA.push({custId: row.custId, seg: row.seg, eng, prob: p, tier});
       TIER_STATS[tier].n++;
       TIER_STATS[tier].sumProb += p;
       TIER_STATS[tier].sumSentJul += row.sentJul;
+      JUL_ENG_COUNTS[eng]++;
     });
 
     assignMediumSubtiers();
 
     renderSummary();
     renderAnalysis();
+    renderGapCalculator();
     populateCohortFilter();
     document.getElementById('lastSync').textContent = new Date().toLocaleString('id-ID');
   }catch(e){
@@ -506,6 +575,7 @@ function renderSummary(){
   if(excludedCount>0) parts.push(`${excludedCount.toLocaleString('id-ID')} flag Noted`);
   if(excludedUndeliverable>0) parts.push(`${excludedUndeliverable.toLocaleString('id-ID')} gagal kirim persisten`);
   if(excludedCreated>0) parts.push(`${excludedCreated.toLocaleString('id-ID')} sudah Created`);
+  if(excludedFreqCap>0) parts.push(`${excludedFreqCap.toLocaleString('id-ID')} kena cap frekuensi`);
   document.getElementById('cntExcluded').textContent = parts.length ? (parts.join(', ') + ' dikecualikan') : 'Tidak ada user dikecualikan';
   document.getElementById('cntHigh').textContent = high.toLocaleString('id-ID');
   document.getElementById('cntMedium').textContent = med.toLocaleString('id-ID');
@@ -539,6 +609,68 @@ function computeLiveAucKs(){
     auc += dx*(points[i].tpr+points[i-1].tpr)/2;
   }
   return {auc, ks};
+}
+
+// Kalkulator gap target - simulasi berbasis data historis (BUKAN model yang "belajar" dari
+// angka target). Dua skenario: (A) perbaikan delivery pada user status "Sent" yang belum
+// delivered, (B) perluasan reach ke user "NotSent" yang belum pernah dikontak bulan ini.
+function renderGapCalculator(){
+  const el = document.getElementById('gapCalcResult');
+  if(!el) return;
+  const raw = document.getElementById('targetInput').value;
+  const target = parseInt(raw);
+  if(!raw || isNaN(target) || target<=0){
+    el.innerHTML = '';
+    return;
+  }
+
+  const currentTotal = (TIER_STATS.High?.sumProb||0) + (TIER_STATS.Medium?.sumProb||0) + (TIER_STATS.Low?.sumProb||0);
+  const gap = target - currentTotal;
+
+  if(gap <= 0){
+    el.innerHTML = `<div class="gap-summary over">
+      <div class="row"><span>Perkiraan konversi saat ini</span><b>~${Math.round(currentTotal).toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Target kamu</span><b>${target.toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Status</span><b style="color:var(--high);">✅ Sudah tercapai, ada headroom ~${Math.round(currentTotal-target).toLocaleString('id-ID')}</b></div>
+    </div>`;
+    return;
+  }
+
+  const sentRate = FUNNEL.Sent.n>0 ? FUNNEL.Sent.events/FUNNEL.Sent.n : 0;
+  const deliveredRate = FUNNEL.Delivered.n>0 ? FUNNEL.Delivered.events/FUNNEL.Delivered.n : 0;
+  const upliftA = deliveredRate - sentRate;
+  const poolA = JUL_ENG_COUNTS.Sent || 0;
+  const neededA = upliftA>0 ? Math.ceil(gap/upliftA) : null;
+  const feasibleA = neededA!==null && poolA>0 && neededA<=poolA;
+
+  const poolB = JUL_ENG_COUNTS.NotSent || 0;
+  const neededB = sentRate>0 ? Math.ceil(gap/sentRate) : null;
+  const feasibleB = neededB!==null && poolB>0 && neededB<=poolB;
+
+  el.innerHTML = `<div class="gap-summary">
+      <div class="row"><span>Perkiraan konversi saat ini</span><b>~${Math.round(currentTotal).toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Target kamu</span><b>${target.toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Gap yang perlu ditutup</span><b style="color:var(--low);">~${Math.ceil(gap).toLocaleString('id-ID')}</b></div>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-card">
+        <h4>Skenario A — Perbaikan Delivery</h4>
+        <div style="font-size:11.5px;color:var(--muted);">Uplift Delivered vs Sent (data Jun): ${fmtPct(sentRate)} → ${fmtPct(deliveredRate)}</div>
+        <div class="big-num">${neededA!==null ? '~'+neededA.toLocaleString('id-ID') : 'n/a'}</div>
+        <div style="font-size:12px;color:var(--muted);">user perlu pindah dari status "Sent" ke "Delivered"</div>
+        <span class="feas ${feasibleA?'ok':'warn'}">${feasibleA ? `✅ Feasible — pool saat ini ${poolA.toLocaleString('id-ID')} user` : `⚠️ Pool saat ini cuma ${poolA.toLocaleString('id-ID')} user, kemungkinan gak cukup sendirian`}</span>
+        <p>Ini skenario paling tervalidasi (dari uji signifikansi funnel) — fokus ke kualitas nomor, sending window, &amp; reputasi sender WA, bukan konten pesan.</p>
+      </div>
+      <div class="scenario-card">
+        <h4>Skenario B — Perluasan Reach</h4>
+        <div style="font-size:11.5px;color:var(--muted);">Estimasi rate kontak baru (setara stage Sent): ${fmtPct(sentRate)}</div>
+        <div class="big-num">${neededB!==null ? '~'+neededB.toLocaleString('id-ID') : 'n/a'}</div>
+        <div style="font-size:12px;color:var(--muted);">user baru (belum pernah dikirim) perlu mulai dikontak</div>
+        <span class="feas ${feasibleB?'ok':'warn'}">${feasibleB ? `✅ Feasible — pool saat ini ${poolB.toLocaleString('id-ID')} user` : `⚠️ Pool saat ini cuma ${poolB.toLocaleString('id-ID')} user, kemungkinan gak cukup sendirian`}</span>
+        <p>Estimasi ini konservatif (pakai rate stage "Sent" sebagai proksi) — kontak baru belum tentu langsung delivered/read, jadi realisasinya bisa lebih rendah dari perkiraan.</p>
+      </div>
+    </div>
+    <div class="insight-box" style="margin-top:12px;">Realistisnya, kombinasi A+B biasanya lebih efektif &amp; lebih cepat dibanding andalin satu skenario doang — pakai angka di atas sebagai patokan awal, lalu validasi lewat A/B test kecil sebelum rollout penuh.</div>`;
 }
 
 function renderAnalysis(){
@@ -664,25 +796,25 @@ function renderAnalysis(){
     </div>`;
 
   /* ---- 4. Tabel aksi & frekuensi kontak/minggu (ringkas, 1 baris per tier) ---- */
-  const weeksElapsed = Math.max(SNAPSHOT_DAY_OF_MONTH || 21, 1) / 7; // estimasi minggu berjalan di periode Jul
   function weeklyFreq(tier){
     const s = TIER_STATS[tier];
     if(!s.n) return 0;
-    return (s.sumSentJul / s.n) / weeksElapsed;
+    return (s.sumSentJul / s.n) / WEEKS_ELAPSED;
   }
   const focusText = drSig ? "Konten & copywriting pesan (dorong read rate)" : "Deliverability (kualitas nomor, sending window, reputasi sender)";
   const actionRows = [
-    {tier:'High', action:'Maintain — jangan tambah volume', freq:'1-2x/minggu (maks)', freqNote:`baseline saat ini ~${weeklyFreq('High').toFixed(1)}x/minggu`, focus:'Personalisasi/high-touch, bukan tambah volume'},
-    {tier:'Medium', action:`${volumeTier==='Medium'?'Prioritas utama — ':''}Naikkan usaha delivery`, freq:'2-3x/minggu (retry terjadwal)', freqNote:`baseline saat ini ~${weeklyFreq('Medium').toFixed(1)}x/minggu`, focus:focusText},
-    {tier:'Low', action:'Turunkan/geser ke channel murah', freq:'≤1x/minggu', freqNote:`baseline saat ini ~${weeklyFreq('Low').toFixed(1)}x/minggu`, focus:'Broadcast massal, bukan WA personal'},
+    {tier:'High', action:'Maintain — jangan tambah volume', freq:'1-2x/minggu (maks)', freqNote:`baseline saat ini ~${weeklyFreq('High').toFixed(1)}x/minggu`, focus:'Personalisasi/high-touch, bukan tambah volume', content:getDailyKeyword(0)},
+    {tier:'Medium', action:`${volumeTier==='Medium'?'Prioritas utama — ':''}Naikkan usaha delivery`, freq:'2-3x/minggu (retry terjadwal)', freqNote:`baseline saat ini ~${weeklyFreq('Medium').toFixed(1)}x/minggu`, focus:focusText, content:getDailyKeyword(1)},
+    {tier:'Low', action:'Turunkan/geser ke channel murah', freq:'≤1x/minggu', freqNote:`baseline saat ini ~${weeklyFreq('Low').toFixed(1)}x/minggu`, focus:'Broadcast massal, bukan WA personal', content:getDailyKeyword(2)},
   ];
   document.getElementById('actionTable').innerHTML = `<thead><tr>
-      <th>Tier</th><th>Aksi</th><th>Frekuensi Kontak</th><th>Fokus Perbaikan</th>
+      <th>Tier</th><th>Aksi</th><th>Frekuensi Kontak</th><th>Fokus Perbaikan</th><th>Konten/Keyword Hari Ini</th>
     </tr></thead><tbody>${actionRows.map(r=>`
       <tr><td><span class="tier-pill ${r.tier}">${r.tier}</span></td>
         <td>${r.action}</td>
         <td><span class="freq-badge">${r.freq}</span><span class="freq-note">${r.freqNote}</span></td>
-        <td>${r.focus}</td></tr>`).join('')}</tbody>`;
+        <td>${r.focus}</td>
+        <td style="font-style:italic;color:var(--ink);">"${r.content}"</td></tr>`).join('')}</tbody>`;
 }
 
 function populateCohortFilter(){
@@ -843,9 +975,21 @@ async function toggleExcludeCreated(){
   await manualRefresh();
 }
 
+function updateFreqCapButton(){
+  const btn = document.getElementById('freqCapToggle');
+  btn.textContent = FILTER_FREQ_CAP ? '🟢 Takeout Kena Cap Frekuensi: ON' : '⚪ Takeout Kena Cap Frekuensi: OFF';
+  btn.title = `Keluarkan user yang perkiraan pengiriman mingguannya sudah lewat rekomendasi cap tier-nya (High >${FREQ_CAP.High}x, Medium >${FREQ_CAP.Medium}x, Low >${FREQ_CAP.Low}x per minggu). Tidak memengaruhi training model.`;
+}
+async function toggleFreqCap(){
+  FILTER_FREQ_CAP = !FILTER_FREQ_CAP;
+  updateFreqCapButton();
+  await manualRefresh();
+}
+
 updateRetrainButton();
 updateSuppressButton();
 updateCreatedButton();
+updateFreqCapButton();
 loadData();
 // Auto-refresh berkala (sama seperti CRM Dashboard) - fetch ulang tanpa perlu aksi manual dari user
 setInterval(async ()=>{
