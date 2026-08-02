@@ -164,6 +164,8 @@
   </div>
 </header>
 
+<div id="fallbackBanner" style="display:none;background:#FDECEC;border-bottom:3px solid var(--low);color:var(--low);padding:12px 32px;font-size:13px;font-weight:600;text-align:center;"></div>
+
 <main>
 
 <div class="cards" id="cards">
@@ -316,13 +318,25 @@ const TARGET_COLUMN_FALLBACK = "Created";
 function gvizCsvUrl(sheetId){
   return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
 }
-async function fetchSheetRows(sheetId){
-  const res = await fetch(gvizCsvUrl(sheetId));
-  if(!res.ok) return null;
-  const text = await res.text();
-  if(text.trim().indexOf("<") === 0) return null;
-  const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
-  return parsed.data.length ? parsed.data : null;
+async function fetchSheetRows(sheetId, attempt){
+  attempt = attempt || 1;
+  try{
+    const res = await fetch(gvizCsvUrl(sheetId));
+    if(!res.ok){
+      if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRows(sheetId, attempt+1); }
+      return null;
+    }
+    const text = await res.text();
+    if(text.trim().indexOf("<") === 0){
+      if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRows(sheetId, attempt+1); }
+      return null;
+    }
+    const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+    return parsed.data.length ? parsed.data : null;
+  }catch(e){
+    if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRows(sheetId, attempt+1); }
+    return null;
+  }
 }
 // List semua file di folder Drive via Drive API v3 (butuh API key, read-only, cukup buat baca nama+ID)
 async function listDriveFiles(){
@@ -657,6 +671,9 @@ let DIAG_ELIGIBLE_UNIQUE_IDS = 0; // jumlah Cust ID unik setelah dedup (beda dar
 let DIAG_CURRENT_RAW_ROWS = 0; // jumlah baris mentah dari file bulan berjalan
 let CURRENT_CUTOFF_HIGH = null; // nilai propensity score aktual yang jadi batas bawah tier High saat ini
 let CURRENT_CUTOFF_MED = null; // nilai propensity score aktual yang jadi batas bawah tier Medium saat ini
+let TRAINING_POSITIVE_COUNT = 0; // jumlah contoh positif (Created WhatsApp=1) yang ketemu di data training
+let TRAINING_TOTAL_COUNT = 0; // total baris training (positif + negatif)
+let USING_BASELINE_FALLBACK = false; // true = retrain GAGAL (data positif <30), diam-diam balik pakai bobot baseline lama
 
 async function loadData(){
   const body = document.getElementById('panelBody');
@@ -749,11 +766,15 @@ async function loadData(){
 
     /* ---- 5. RETRAIN (kalau diaktifkan) - HANYA pakai comboRawTrain, bukan gabungan penuh,
        supaya comboRawTest (holdout) beneran belum pernah dilihat model saat retrain ---- */
+    TRAINING_POSITIVE_COUNT = Object.values(comboRawTrain).reduce((s,c)=>s+c.pos,0);
+    TRAINING_TOTAL_COUNT = Object.values(comboRawTrain).reduce((s,c)=>s+c.pos+c.neg,0);
     if(AUTO_RETRAIN){
       const retrained = retrainModel(comboRawTrain);
       ACTIVE = retrained || BASELINE;
+      USING_BASELINE_FALLBACK = !retrained;
     } else {
       ACTIVE = BASELINE;
+      USING_BASELINE_FALLBACK = false; // ini manual OFF, bukan fallback gagal
     }
     LAST_TRAINED_AT = new Date();
     VIF_RESULT = computeVIF(comboRawTrain);
@@ -839,7 +860,15 @@ function renderSummary(){
   const med = DATA.filter(d=>d.tier==="Medium").length;
   const dupCount = DIAG_ELIGIBLE_RAW_ROWS - DIAG_ELIGIBLE_UNIQUE_IDS;
   const dupNote = dupCount > 0 ? ` (⚠️ ada ${dupCount.toLocaleString('id-ID')} duplikat Cust ID)` : ' (✅ tidak ada duplikat)';
-  document.getElementById('diagRow').innerHTML = `Baris mentah — Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote} | Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')}</b> | Cutoff skor saat ini — High: <b>≥${CURRENT_CUTOFF_HIGH!==null?fmtPct(CURRENT_CUTOFF_HIGH):'-'}</b>, Medium: <b>≥${CURRENT_CUTOFF_MED!==null?fmtPct(CURRENT_CUTOFF_MED):'-'}</b>`;
+  document.getElementById('diagRow').innerHTML = `Baris mentah — Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote} | Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')}</b> | Cutoff skor saat ini — High: <b>≥${CURRENT_CUTOFF_HIGH!==null?fmtPct(CURRENT_CUTOFF_HIGH):'-'}</b>, Medium: <b>≥${CURRENT_CUTOFF_MED!==null?fmtPct(CURRENT_CUTOFF_MED):'-'}</b> | Data training: <b>${TRAINING_POSITIVE_COUNT.toLocaleString('id-ID')} positif</b> dari ${TRAINING_TOTAL_COUNT.toLocaleString('id-ID')} baris`;
+
+  const banner = document.getElementById('fallbackBanner');
+  if(USING_BASELINE_FALLBACK){
+    banner.style.display = 'block';
+    banner.innerHTML = `⚠️ RETRAIN GAGAL — data training cuma punya ${TRAINING_POSITIVE_COUNT} contoh "Created WhatsApp" positif (minimal butuh 30). Model DIAM-DIAM PAKAI BOBOT BASELINE LAMA (dari dataset awal berbulan-bulan lalu, gak relevan lagi buat data sekarang) — ini kemungkinan besar penyebab tier High/Medium kosong atau aneh. Perlu lebih banyak bulan data training, atau cek apakah kolom "Created WhatsApp" beneran keisi di file bulanan.`;
+  } else {
+    banner.style.display = 'none';
+  }
   const low = DATA.filter(d=>d.tier==="Low").length;
   document.getElementById('cntTotal').textContent = total.toLocaleString('id-ID');
   const parts = [];
@@ -1065,6 +1094,10 @@ function renderAnalysis(){
   const medium = tierRows.find(r=>r.tier==='Medium');
   const low = tierRows.find(r=>r.tier==='Low');
   const volRow = tierRows.find(r=>r.tier===volumeTier);
+  const isDegenerate = volumeTier === 'Low'; // kalau ini kejadian, kemungkinan besar High/Medium kosong karena masalah data/training, bukan temuan asli
+  const volWhy = isDegenerate
+    ? `⚠️ Ini kejadian aneh — tier "volume terbesar" harusnya bukan Low. Kemungkinan besar High/Medium lagi kosong/kekecilan gara-gara masalah data atau training (cek banner peringatan di atas &amp; baris diagnostik di header). Jangan jadiin ini rekomendasi asli dulu sebelum itu dibenerin.`
+    : `Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.`;
 
   document.getElementById('priorityGrid').innerHTML = `
     <div class="priority-card role-eff">
@@ -1079,12 +1112,12 @@ function renderAnalysis(){
     </div>
     <div class="priority-card role-vol">
       <div class="rank">#2</div>
-      <div class="role" style="color:var(--med);">Peluang Volume Terbesar</div>
+      <div class="role" style="color:${isDegenerate?'var(--low)':'var(--med)'};">${isDegenerate?'⚠️ Data Bermasalah':'Peluang Volume Terbesar'}</div>
       <div class="tier-name">${volRow.tier} Potential</div>
       <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(volRow.expected).toLocaleString('id-ID')}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${volRow.n.toLocaleString('id-ID')} (${fmtPct(volRow.n/totalN,1)})</span></div>
       <div class="stat-line"><span class="k">Conversion rate</span><span>${fmtPct(volRow.avgProb)}</span></div>
-      <div class="why">Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.</div>
+      <div class="why">${volWhy}</div>
       <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${volRow.tier}')">Lihat Daftar User ID ↑</button>
     </div>
     <div class="priority-card role-avoid">
