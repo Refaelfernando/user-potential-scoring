@@ -676,7 +676,8 @@ let CURRENT_CUTOFF_HIGH = null; // nilai propensity score aktual yang jadi batas
 let CURRENT_CUTOFF_MED = null; // nilai propensity score aktual yang jadi batas bawah tier Medium saat ini
 let TRAINING_POSITIVE_COUNT = 0; // jumlah contoh positif (Created WhatsApp=1) yang ketemu di data training
 let TRAINING_TOTAL_COUNT = 0; // total baris training (positif + negatif)
-let USING_BASELINE_FALLBACK = false; // true = retrain GAGAL (data positif <30), diam-diam balik pakai bobot baseline lama
+let USING_BASELINE_FALLBACK = false; // true = retrain GAGAL (data positif <30 ATAU koefisien kebalik arah), diam-diam balik pakai bobot baseline lama
+let REJECTED_FOR_SIGN_FLIP = false; // true kalau fallback-nya spesifik gara-gara koefisien hasil retrain tandanya kebalik (bukan karena data kurang)
 
 async function loadData(){
   const body = document.getElementById('panelBody');
@@ -772,12 +773,23 @@ async function loadData(){
     TRAINING_POSITIVE_COUNT = Object.values(comboRawTrain).reduce((s,c)=>s+c.pos,0);
     TRAINING_TOTAL_COUNT = Object.values(comboRawTrain).reduce((s,c)=>s+c.pos+c.neg,0);
     if(AUTO_RETRAIN){
-      const retrained = retrainModel(comboRawTrain);
+      let retrained = retrainModel(comboRawTrain);
+      // Sanity check: WOE dibangun supaya bucket "makin sering convert" punya WOE makin NEGATIF -
+      // jadi koefisien Segment & Engagement HARUSNYA selalu negatif (biar WOE negatif -> kontribusi
+      // positif ke skor). Kalau tandanya kebalik, itu tanda training kena noise/data gak stabil -
+      // JANGAN dipakai, mending fallback ke baseline daripada nge-produce hasil yang flip-flop liar.
+      let rejectedForSignFlip = false;
+      if(retrained && (retrained.coef.eng >= 0 || retrained.coef.seg >= 0)){
+        retrained = null;
+        rejectedForSignFlip = true;
+      }
       ACTIVE = retrained || BASELINE;
       USING_BASELINE_FALLBACK = !retrained;
+      REJECTED_FOR_SIGN_FLIP = rejectedForSignFlip;
     } else {
       ACTIVE = BASELINE;
       USING_BASELINE_FALLBACK = false; // ini manual OFF, bukan fallback gagal
+      REJECTED_FOR_SIGN_FLIP = false;
     }
     LAST_TRAINED_AT = new Date();
     VIF_RESULT = computeVIF(comboRawTrain);
@@ -872,7 +884,9 @@ function renderSummary(){
   const banner = document.getElementById('fallbackBanner');
   if(USING_BASELINE_FALLBACK){
     banner.style.display = 'block';
-    banner.innerHTML = `⚠️ RETRAIN GAGAL — data training cuma punya ${TRAINING_POSITIVE_COUNT} contoh "Created WhatsApp" positif (minimal butuh 30). Model DIAM-DIAM PAKAI BOBOT BASELINE LAMA (dari dataset awal berbulan-bulan lalu, gak relevan lagi buat data sekarang) — ini kemungkinan besar penyebab tier High/Medium kosong atau aneh. Perlu lebih banyak bulan data training, atau cek apakah kolom "Created WhatsApp" beneran keisi di file bulanan.`;
+    banner.innerHTML = REJECTED_FOR_SIGN_FLIP
+      ? `⚠️ RETRAIN DITOLAK — hasil training kali ini koefisiennya tandanya kebalik (indikasi data training lagi noise/gak stabil, bukan temuan asli). Model PAKAI BOBOT BASELINE LAMA supaya gak nampilin hasil yang flip-flop liar antar refresh. Ini kemungkinan besar penyebab tier yang keliatan aneh/dobel. Coba refresh sekali lagi (kalau datanya emang cuma glitch fetch sesaat), atau kalau kejadian TERUS-TERUSAN, kemungkinan data trainingnya (Created WhatsApp) beneran gak konsisten dan perlu dicek ke sumbernya.`
+      : `⚠️ RETRAIN GAGAL — data training cuma punya ${TRAINING_POSITIVE_COUNT} contoh "Created WhatsApp" positif (minimal butuh 30). Model DIAM-DIAM PAKAI BOBOT BASELINE LAMA (dari dataset awal berbulan-bulan lalu, gak relevan lagi buat data sekarang) — ini kemungkinan besar penyebab tier High/Medium kosong atau aneh. Perlu lebih banyak bulan data training, atau cek apakah kolom "Created WhatsApp" beneran keisi di file bulanan.`;
   } else {
     banner.style.display = 'none';
   }
