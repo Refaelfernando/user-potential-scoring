@@ -321,25 +321,44 @@ const TARGET_COLUMN_FALLBACK = "Created";
 function gvizCsvUrl(sheetId){
   return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
 }
-async function fetchSheetRows(sheetId, attempt){
+async function fetchSheetRowsOnce(sheetId, attempt){
   attempt = attempt || 1;
   try{
     const res = await fetch(gvizCsvUrl(sheetId));
     if(!res.ok){
-      if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRows(sheetId, attempt+1); }
+      if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRowsOnce(sheetId, attempt+1); }
       return null;
     }
     const text = await res.text();
     if(text.trim().indexOf("<") === 0){
-      if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRows(sheetId, attempt+1); }
+      if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRowsOnce(sheetId, attempt+1); }
       return null;
     }
     const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
     return parsed.data.length ? parsed.data : null;
   }catch(e){
-    if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRows(sheetId, attempt+1); }
+    if(attempt < 3){ await new Promise(r=>setTimeout(r, 400*attempt)); return fetchSheetRowsOnce(sheetId, attempt+1); }
     return null;
   }
+}
+// Google/gviz kadang ngirim response yang "berhasil" (200 OK, CSV valid) tapi baris-nya gak lengkap
+// (truncated diam-diam, gak ada error). Karena sheet sumbernya FIX (gak diedit terus-terusan),
+// hasil fetch yang genuinely benar harusnya punya jumlah baris yang SAMA tiap kali di-cek ulang.
+// Fungsi ini fetch berkali-kali sampai 2 hasil BERTURUT-TURUT punya jumlah baris identik (konsensus)
+// sebelum data-nya dipakai - baru dianggap "stabil". Kalau sampai batas percobaan gak pernah
+// konsensus, pakai hasil dengan baris TERBANYAK yang pernah kelihatan (asumsi: gagal = truncated =
+// lebih sedikit dari yang asli, bukan lebih banyak).
+async function fetchSheetRows(sheetId){
+  const maxAttempts = 5;
+  let best = null, bestLen = -1, prevLen = -1;
+  for(let i=0; i<maxAttempts; i++){
+    const rows = await fetchSheetRowsOnce(sheetId);
+    const len = rows ? rows.length : -1;
+    if(len > bestLen){ best = rows; bestLen = len; }
+    if(len > 0 && len === prevLen) return rows; // 2 fetch berturut-turut sepakat -> stabil, langsung pakai
+    prevLen = len;
+  }
+  return best; // gak sempat konsensus dalam batas percobaan - pakai yang barisnya paling banyak
 }
 // List semua file di folder Drive via Drive API v3 (butuh API key, read-only, cukup buat baca nama+ID)
 async function listDriveFiles(){
