@@ -152,7 +152,6 @@
     <div class="status" id="statusBox">
       <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#CFE3DC;">⟳ syncing...</span></div>
       <div id="totalRow">Total user dianalisis: <b>—</b></div>
-      <div id="diagRow" style="font-size:11px;opacity:.8;">Baris mentah: —</div>
     </div>
   </div>
   <div class="toolbar">
@@ -167,6 +166,8 @@
 <div id="fallbackBanner" style="display:none;background:#FDECEC;border-bottom:3px solid var(--low);color:var(--low);padding:12px 32px;font-size:13px;font-weight:600;text-align:center;"></div>
 
 <main>
+
+  <div id="diagRow" style="font-size:11.5px;color:var(--muted);background:var(--card);border-radius:14px;padding:10px 18px;margin-bottom:14px;box-shadow:var(--shadow);line-height:1.8;">Memuat diagnostik...</div>
 
 <div class="cards" id="cards">
     <div class="card total">
@@ -197,6 +198,8 @@
       <div class="controls" id="controls" style="display:none;">
         <input type="text" id="searchBox" placeholder="Cari Cust ID..." oninput="renderTable()">
         <select id="cohortFilter" onchange="renderTable()"><option value="">Semua Cohort</option></select>
+        <select id="monthFilter" onchange="renderTable()"><option value="">Semua Bulan (Created)</option></select>
+        <input type="number" id="minCreatedFilter" placeholder="Min. Total Created" style="width:150px;" min="0" oninput="renderTable()">
         <button class="ghost" onclick="exportCSV()">Export CSV</button>
         <button onclick="clearSelection()">Tutup</button>
       </div>
@@ -860,7 +863,11 @@ function renderSummary(){
   const med = DATA.filter(d=>d.tier==="Medium").length;
   const dupCount = DIAG_ELIGIBLE_RAW_ROWS - DIAG_ELIGIBLE_UNIQUE_IDS;
   const dupNote = dupCount > 0 ? ` (⚠️ ada ${dupCount.toLocaleString('id-ID')} duplikat Cust ID)` : ' (✅ tidak ada duplikat)';
-  document.getElementById('diagRow').innerHTML = `Baris mentah — Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote} | Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')}</b> | Cutoff skor saat ini — High: <b>≥${CURRENT_CUTOFF_HIGH!==null?fmtPct(CURRENT_CUTOFF_HIGH):'-'}</b>, Medium: <b>≥${CURRENT_CUTOFF_MED!==null?fmtPct(CURRENT_CUTOFF_MED):'-'}</b> | Data training: <b>${TRAINING_POSITIVE_COUNT.toLocaleString('id-ID')} positif</b> dari ${TRAINING_TOTAL_COUNT.toLocaleString('id-ID')} baris`;
+  document.getElementById('diagRow').innerHTML = `
+    <span>📄 Baris Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote}</span>
+    &nbsp;·&nbsp; <span>📆 Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')} baris</b></span>
+    &nbsp;·&nbsp; <span>🎯 Cutoff — High ≥<b>${CURRENT_CUTOFF_HIGH!==null?fmtPct(CURRENT_CUTOFF_HIGH):'-'}</b>, Medium ≥<b>${CURRENT_CUTOFF_MED!==null?fmtPct(CURRENT_CUTOFF_MED):'-'}</b></span>
+    &nbsp;·&nbsp; <span>🧪 Training: <b>${TRAINING_POSITIVE_COUNT.toLocaleString('id-ID')} positif</b> / ${TRAINING_TOTAL_COUNT.toLocaleString('id-ID')} baris</span>`;
 
   const banner = document.getElementById('fallbackBanner');
   if(USING_BASELINE_FALLBACK){
@@ -1095,9 +1102,18 @@ function renderAnalysis(){
   const low = tierRows.find(r=>r.tier==='Low');
   const volRow = tierRows.find(r=>r.tier===volumeTier);
   const isDegenerate = volumeTier === 'Low'; // kalau ini kejadian, kemungkinan besar High/Medium kosong karena masalah data/training, bukan temuan asli
-  const volWhy = isDegenerate
-    ? `⚠️ Ini kejadian aneh — tier "volume terbesar" harusnya bukan Low. Kemungkinan besar High/Medium lagi kosong/kekecilan gara-gara masalah data atau training (cek banner peringatan di atas &amp; baris diagnostik di header). Jangan jadiin ini rekomendasi asli dulu sebelum itu dibenerin.`
-    : `Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.`;
+  const sameAsHigh = volumeTier === high.tier && !isDegenerate; // High menang di rate DAN volume - valid, bukan bug, tapi perlu penjelasan biar gak keliatan kayak kartu dobel
+  let volRole, volWhy;
+  if(isDegenerate){
+    volRole = '⚠️ Data Bermasalah';
+    volWhy = `⚠️ Ini kejadian aneh — tier "volume terbesar" harusnya bukan Low. Kemungkinan besar High/Medium lagi kosong/kekecilan gara-gara masalah data atau training (cek banner peringatan di atas &amp; baris diagnostik di bawah header). Jangan jadiin ini rekomendasi asli dulu sebelum itu dibenerin.`;
+  } else if(sameAsHigh){
+    volRole = 'Juga Volume Terbesar';
+    volWhy = `Tier yang sama kayak di atas (${high.tier}) ternyata JUGA punya perkiraan total konversi paling besar — bukan cuma paling efisien per-kontak, tapi total dampaknya juga paling tinggi. Artinya tier Medium/Low performanya jauh di bawah ekspektasi dibanding populasinya, worth dicek kenapa.`;
+  } else {
+    volRole = 'Peluang Volume Terbesar';
+    volWhy = `Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.`;
+  }
 
   document.getElementById('priorityGrid').innerHTML = `
     <div class="priority-card role-eff">
@@ -1112,7 +1128,7 @@ function renderAnalysis(){
     </div>
     <div class="priority-card role-vol">
       <div class="rank">#2</div>
-      <div class="role" style="color:${isDegenerate?'var(--low)':'var(--med)'};">${isDegenerate?'⚠️ Data Bermasalah':'Peluang Volume Terbesar'}</div>
+      <div class="role" style="color:${isDegenerate?'var(--low)':'var(--med)'};">${volRole}</div>
       <div class="tier-name">${volRow.tier} Potential</div>
       <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(volRow.expected).toLocaleString('id-ID')}</b></span></div>
       <div class="stat-line"><span class="k">Jumlah user</span><span>${volRow.n.toLocaleString('id-ID')} (${fmtPct(volRow.n/totalN,1)})</span></div>
@@ -1161,6 +1177,29 @@ function populateCohortFilter(){
     opt.value = seg; opt.textContent = seg;
     sel.appendChild(opt);
   });
+  populateMonthFilter();
+}
+function populateMonthFilter(){
+  const sel = document.getElementById('monthFilter');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Semua Bulan (Created)</option>';
+  const months = [...ARCHIVE_TABS_LOADED, CUR_LABEL].filter(Boolean);
+  months.forEach(m=>{
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    sel.appendChild(opt);
+  });
+  if(months.includes(current)) sel.value = current;
+}
+function getTotalCreated(custId){
+  const h = CUST_HISTORY[custId];
+  if(!h) return 0;
+  return h.reduce((s,x)=>s+x.created,0);
+}
+function getCreatedMonths(custId){
+  const h = CUST_HISTORY[custId];
+  if(!h) return [];
+  return h.filter(x=>x.created>0).map(x=>x.month);
 }
 
 /* ============== DRILL-DOWN ============== */
@@ -1176,6 +1215,8 @@ function selectTier(tier){
   document.getElementById('panelTitle').textContent = `Daftar User — ${tier} Potential`;
   document.getElementById('searchBox').value = '';
   document.getElementById('cohortFilter').value = '';
+  document.getElementById('monthFilter').value = '';
+  document.getElementById('minCreatedFilter').value = '';
   renderTable();
 }
 function selectSubtier(sub){
@@ -1194,10 +1235,14 @@ function renderTable(){
   if(!activeTier) return;
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   const cohort = document.getElementById('cohortFilter').value;
+  const monthSel = document.getElementById('monthFilter').value;
+  const minCreated = parseInt(document.getElementById('minCreatedFilter').value);
   let rows = DATA.filter(d=>d.tier===activeTier);
   if(cohort) rows = rows.filter(d=>d.seg===cohort);
   if(activeTier==='Medium' && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
+  if(monthSel) rows = rows.filter(d=>getCreatedMonths(d.custId).includes(monthSel));
+  if(!isNaN(minCreated)) rows = rows.filter(d=>getTotalCreated(d.custId) >= minCreated);
   rows.sort((a,b)=>b.prob-a.prob);
 
   const body = document.getElementById('panelBody');
@@ -1227,12 +1272,16 @@ function renderTable(){
   const shown = rows.slice(0, maxShow);
   const showSubCol = activeTier==='Medium';
   let html = subtierHtml + `<div class="tbl-wrap"><table><thead><tr>
-    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th>
+    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th><th>Total Created</th><th>Bulan Created</th>
   </tr></thead><tbody>`;
   shown.forEach(d=>{
+    const totalCreated = getTotalCreated(d.custId);
+    const createdMonths = getCreatedMonths(d.custId);
     html += `<tr><td>${d.custId}</td><td>${d.seg}</td><td>${d.eng}</td><td>${fmtPct(d.prob)}</td>
       ${showSubCol?`<td><span class="subtier-pill">${d.subtier}</span></td>`:''}
-      <td><span class="tier-pill ${d.tier}">${d.tier}</span></td></tr>`;
+      <td><span class="tier-pill ${d.tier}">${d.tier}</span></td>
+      <td>${totalCreated}</td>
+      <td>${createdMonths.length?createdMonths.join(', '):'—'}</td></tr>`;
   });
   html += `</tbody></table></div>`;
   if(rows.length > maxShow){
@@ -1248,13 +1297,19 @@ function exportCSV(){
   if(activeTier==='Medium' && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
+  const monthSel = document.getElementById('monthFilter').value;
+  if(monthSel) rows = rows.filter(d=>getCreatedMonths(d.custId).includes(monthSel));
+  const minCreated = parseInt(document.getElementById('minCreatedFilter').value);
+  if(!isNaN(minCreated)) rows = rows.filter(d=>getTotalCreated(d.custId) >= minCreated);
   rows.sort((a,b)=>b.prob-a.prob);
   const showSubCol = activeTier==='Medium';
-  let csv = showSubCol ? "Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier\n" : "Cust ID,Cohort,Engagement,Propensity Score,Tier\n";
+  let csv = showSubCol ? "Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier,Total Created,Bulan Created\n" : "Cust ID,Cohort,Engagement,Propensity Score,Tier,Total Created,Bulan Created\n";
   rows.forEach(d=>{
+    const totalCreated = getTotalCreated(d.custId);
+    const createdMonths = getCreatedMonths(d.custId).join('; ');
     csv += showSubCol
-      ? `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.subtier},${d.tier}\n`
-      : `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier}\n`;
+      ? `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.subtier},${d.tier},${totalCreated},"${createdMonths}"\n`
+      : `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier},${totalCreated},"${createdMonths}"\n`;
   });
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
