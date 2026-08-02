@@ -380,7 +380,7 @@ function twoPropZTest(x1,n1,x2,n2){
 let AUTO_RETRAIN = true; // true = model dilatih ulang otomatis tiap refresh dari data live. false = pakai bobot baseline tetap. Bisa di-toggle lewat tombol "Auto-Retrain" di header.
 let FILTER_SUPPRESS_UNDELIVERABLE = true; // true = keluarkan user yang gagal delivered 2 periode berturut-turut (Jun & Jul) dari tier/list/kartu (training model tetap pakai semua data, tidak kena filter ini)
 let FILTER_EXCLUDE_CREATED = true; // true = keluarkan user yang Created Jul > 0 (sudah convert bulan ini) dari tier/list/kartu
-let FILTER_FREQ_CAP = true; // true = keluarkan user yang perkiraan frekuensi kirim mingguannya udah lewat rekomendasi cap tier-nya
+let FILTER_FREQ_CAP = false; // default OFF - filter ini secara struktural cenderung nge-exclude tier High (orang yang scoring tinggi butuh Sent tinggi juga, jadi hampir selalu "kena cap"). Nyalain manual kalau mau dites, tapi hati-hati bisa ngosongin High.
 const FREQ_CAP = {High: 2, Medium: 3, Low: 1}; // cap max x/minggu sesuai rekomendasi di tabel aksi
 
 // Baseline: bobot hasil training awal (Jun 2026), dipakai sebagai fallback & pembanding drift
@@ -455,11 +455,11 @@ function recordCustHistory(custId, monthLabel, row){
     sources: getCreatedSources(row)
   });
 }
-async function buildPerMonthTrainingData(monthFiles, eligibleMap){
+function processPerMonthTrainingData(monthFiles, allRows, eligibleMap){
   const perMonth = [];
-  for(const mf of monthFiles){
-    const rows = await fetchSheetRows(mf.id);
-    if(!rows) continue;
+  monthFiles.forEach((mf, i) => {
+    const rows = allRows[i];
+    if(!rows) return;
     const refDate = new Date(mf.year, mf.monthNum, 0); // hari terakhir bulan itu
     const comboRaw = {};
     rows.forEach(r=>{
@@ -482,7 +482,7 @@ async function buildPerMonthTrainingData(monthFiles, eligibleMap){
       if(created) comboRaw[key].pos++; else comboRaw[key].neg++;
     });
     perMonth.push({name: mf.name, comboRaw});
-  }
+  });
   return perMonth;
 }
 function mergeCombos(comboList){
@@ -672,16 +672,19 @@ async function loadData(){
     CUR_LABEL = currentMonthFile.name;
     TRAIN_LABEL = trainingMonthFiles.length ? trainingMonthFiles.map(f=>f.name).join(', ') : '(belum ada bulan lengkap sebelumnya)';
 
-    /* ---- 2. Fetch roster Eligible (Cust ID -> Paidback Date) ---- */
-    const eligibleRows = await fetchSheetRows(eligibleFile.id);
+    /* ---- 2+3+4. Fetch SEMUA file sekaligus paralel: Eligible, bulan berjalan, & semua bulan training ---- */
+    const [eligibleRows, currentRows, ...trainingRowsArr] = await Promise.all([
+      fetchSheetRows(eligibleFile.id),
+      fetchSheetRows(currentMonthFile.id),
+      ...trainingMonthFiles.map(mf => fetchSheetRows(mf.id))
+    ]);
+
     if(!eligibleRows) throw new Error(`Gagal baca isi file "${eligibleFile.name}". Cek sharing-nya "Anyone with the link".`);
     const eligibleMap = buildEligibleMap(eligibleRows);
     eligibleFile_lastMap = eligibleMap;
     DIAG_ELIGIBLE_RAW_ROWS = eligibleRows.length;
     DIAG_ELIGIBLE_UNIQUE_IDS = Object.keys(eligibleMap).length;
 
-    /* ---- 3. Fetch file bulan berjalan (current) -> Cust ID -> {sent,delivered,read} ---- */
-    const currentRows = await fetchSheetRows(currentMonthFile.id);
     DIAG_CURRENT_RAW_ROWS = currentRows ? currentRows.length : 0;
     const currentEngMap = {};
     CUST_HISTORY = {};
@@ -707,10 +710,15 @@ async function loadData(){
     JUL_ENG_COUNTS = {NotSent:0, Sent:0, Delivered:0, Read:0};
     TIER_STATS = {High:{n:0,sumProb:0,sumSentJul:0}, Medium:{n:0,sumProb:0,sumSentJul:0}, Low:{n:0,sumProb:0,sumSentJul:0}};
     SNAPSHOT_DAY_OF_MONTH = new Date().getDate(); // file bulan berjalan diupdate rutin - pakai tanggal hari ini
-    WEEKS_ELAPSED = Math.max(SNAPSHOT_DAY_OF_MONTH, 1) / 7;
+    // PENTING: jangan biarkan pembagi di bawah 1 minggu. Kalau ditulis Math.max(hari,1)/7, di awal
+    // bulan (mis. tanggal 3) pembaginya jadi 0,43 - itu bikin estimasi rate mingguan MELEDAK bahkan
+    // buat orang yang baru dikirim 1-2 pesan doang, jadi salah kena filter cap frekuensi padahal
+    // belum tentu over-contacted beneran. Dengan dibungkus Math.max(...,1) DI LUAR pembagian, di awal
+    // bulan estimasinya jadi = jumlah Sent apa adanya (gak di-ekstrapolasi berlebihan).
+    WEEKS_ELAPSED = Math.max(SNAPSHOT_DAY_OF_MONTH / 7, 1);
 
-    /* ---- 4. Training multi-bulan: fetch per-bulan, lalu split train vs holdout (out-of-time) ---- */
-    const perMonth = await buildPerMonthTrainingData(trainingMonthFiles, eligibleMap);
+    /* ---- Proses training multi-bulan (fetch-nya udah kelar di atas, sekarang tinggal olah) ---- */
+    const perMonth = processPerMonthTrainingData(trainingMonthFiles, trainingRowsArr, eligibleMap);
     ARCHIVE_MONTHS_LOADED = perMonth.length;
     ARCHIVE_TABS_LOADED = perMonth.map(m=>m.name);
 
@@ -1311,7 +1319,7 @@ async function toggleExcludeCreated(){
 function updateFreqCapButton(){
   const btn = document.getElementById('freqCapToggle');
   btn.textContent = FILTER_FREQ_CAP ? '🟢 Takeout Kena Cap Frekuensi: ON' : '⚪ Takeout Kena Cap Frekuensi: OFF';
-  btn.title = `Keluarkan user yang perkiraan pengiriman mingguannya sudah lewat rekomendasi cap tier-nya (High >${FREQ_CAP.High}x, Medium >${FREQ_CAP.Medium}x, Low >${FREQ_CAP.Low}x per minggu). Tidak memengaruhi training model.`;
+  btn.title = `Keluarkan user yang perkiraan pengiriman mingguannya sudah lewat rekomendasi cap tier-nya (High >${FREQ_CAP.High}x, Medium >${FREQ_CAP.Medium}x, Low >${FREQ_CAP.Low}x per minggu). ⚠️ HATI-HATI: filter ini cenderung ngosongin tier High karena user skor tinggi biasanya juga udah sering dikirim. Tidak memengaruhi training model.`;
 }
 async function toggleFreqCap(){
   FILTER_FREQ_CAP = !FILTER_FREQ_CAP;
