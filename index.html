@@ -1353,6 +1353,20 @@ function renderTable(){
           <div class="st-stat">${g.length.toLocaleString('id-ID')} user &middot; ${fmtPct(avg)}</div>
         </div>`;
       }).join('')}</div>
+      <div class="insight-box" style="margin-top:10px;">
+        <b>Kenapa masuk ke band Tinggi/Sedang/Rendah?</b> Skor tiap user cuma ditentuin dari 2 hal: <b>Segment/cohort</b> (M0-M4, berdasarkan Paidback Date) dan <b>Engagement periode berjalan</b> (NotSent/Sent/Delivered/Read). Dalam 1 tier (${activeTier}), user dengan kombinasi Segment×Engagement yang skornya di 1/3 TERTINGGI masuk <b>Tinggi</b>, 1/3 TENGAH masuk <b>Sedang</b>, 1/3 TERENDAH masuk <b>Rendah</b> — bukan acak, murni ranking skor.
+        <div style="margin-top:8px;">${bands.map(b=>{
+          const combos = {};
+          allInTier.filter(d=>d.subtier===b).forEach(d=>{
+            const key = d.seg+' + '+d.eng;
+            if(!combos[key]) combos[key] = {n:0, prob:d.prob};
+            combos[key].n++;
+          });
+          const list = Object.entries(combos).sort((a,b2)=>b2[1].prob-a[1].prob)
+            .map(([k,v])=>`${k} (${fmtPct(v.prob)}, ${v.n.toLocaleString('id-ID')} user)`).join('; ');
+          return `<div style="margin-top:4px;"><b>${b}:</b> ${list || '-'}</div>`;
+        }).join('')}</div>
+      </div>
     </div>`;
   }
 
