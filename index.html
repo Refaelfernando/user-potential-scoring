@@ -605,15 +605,19 @@ function getDailyKeyword(offset){
 
 // Pecah tier Medium jadi 3 sub-band (Tinggi/Sedang/Rendah) berdasarkan tercile propensity score -
 // dihitung ulang tiap load supaya selalu proporsional ke populasi Medium saat ini.
-function assignMediumSubtiers(){
-  const med = DATA.filter(d=>d.tier==='Medium').sort((a,b)=>b.prob-a.prob);
-  const n = med.length;
+const SUBTIER_ENABLED_TIERS = ['High','Medium']; // tier yang dapat breakdown sub-tier Tinggi/Sedang/Rendah
+function assignSubtiers(tierName){
+  const members = DATA.filter(d=>d.tier===tierName).sort((a,b)=>b.prob-a.prob);
+  const n = members.length;
   const third = Math.ceil(n/3);
-  med.forEach((d,i)=>{
+  members.forEach((d,i)=>{
     if(i < third) d.subtier = 'Tinggi';
     else if(i < third*2) d.subtier = 'Sedang';
     else d.subtier = 'Rendah';
   });
+}
+function assignMediumSubtiers(){
+  SUBTIER_ENABLED_TIERS.forEach(t => assignSubtiers(t));
 }
 
 // Melatih ulang WOE + koefisien logistic regression dari data agregat (bukan per-baris, tapi
@@ -1294,9 +1298,10 @@ function renderTable(){
   const cohort = document.getElementById('cohortFilter').value;
   const monthSel = document.getElementById('monthFilter').value;
   const minCreated = parseInt(document.getElementById('minCreatedFilter').value);
+  const subtierActive = SUBTIER_ENABLED_TIERS.includes(activeTier);
   let rows = DATA.filter(d=>d.tier===activeTier);
   if(cohort) rows = rows.filter(d=>d.seg===cohort);
-  if(activeTier==='Medium' && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
+  if(subtierActive && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   if(monthSel) rows = rows.filter(d=>getCreatedMonths(d.custId).includes(monthSel));
   if(!isNaN(minCreated)) rows = rows.filter(d=>getTotalCreated(d.custId) >= minCreated);
@@ -1304,17 +1309,17 @@ function renderTable(){
 
   const body = document.getElementById('panelBody');
   let subtierHtml = '';
-  if(activeTier==='Medium'){
-    const allMed = DATA.filter(d=>d.tier==='Medium');
+  if(subtierActive){
+    const allInTier = DATA.filter(d=>d.tier===activeTier);
     const bands = ['Tinggi','Sedang','Rendah'];
     subtierHtml = `<div style="padding:16px 20px 0;">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">Breakdown dalam Medium Potential</div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">Breakdown dalam ${activeTier} Potential</div>
       <div class="subtier-grid">${bands.map(b=>{
-        const g = allMed.filter(d=>d.subtier===b);
+        const g = allInTier.filter(d=>d.subtier===b);
         const avg = g.length ? g.reduce((s,d)=>s+d.prob,0)/g.length : 0;
         const active = activeSubtier===b ? ' active' : '';
         return `<div class="subtier-chip${active}" onclick="selectSubtier('${b}')">
-          <div class="st-name">Medium-${b}</div>
+          <div class="st-name">${activeTier}-${b}</div>
           <div class="st-stat">${g.length.toLocaleString('id-ID')} user &middot; ${fmtPct(avg)}</div>
         </div>`;
       }).join('')}</div>
@@ -1327,7 +1332,7 @@ function renderTable(){
   }
   const maxShow = 2000;
   const shown = rows.slice(0, maxShow);
-  const showSubCol = activeTier==='Medium';
+  const showSubCol = subtierActive;
   let html = subtierHtml + `<div class="tbl-wrap"><table><thead><tr>
     <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th><th>Total Created</th><th>Bulan Created</th>
   </tr></thead><tbody>`;
@@ -1351,7 +1356,7 @@ function exportCSV(){
   let rows = DATA.filter(d=>d.tier===activeTier);
   const cohort = document.getElementById('cohortFilter').value;
   if(cohort) rows = rows.filter(d=>d.seg===cohort);
-  if(activeTier==='Medium' && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
+  if(SUBTIER_ENABLED_TIERS.includes(activeTier) && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   const monthSel = document.getElementById('monthFilter').value;
@@ -1359,7 +1364,7 @@ function exportCSV(){
   const minCreated = parseInt(document.getElementById('minCreatedFilter').value);
   if(!isNaN(minCreated)) rows = rows.filter(d=>getTotalCreated(d.custId) >= minCreated);
   rows.sort((a,b)=>b.prob-a.prob);
-  const showSubCol = activeTier==='Medium';
+  const showSubCol = SUBTIER_ENABLED_TIERS.includes(activeTier);
   let csv = showSubCol ? "Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier,Total Created,Bulan Created\n" : "Cust ID,Cohort,Engagement,Propensity Score,Tier,Total Created,Bulan Created\n";
   rows.forEach(d=>{
     const totalCreated = getTotalCreated(d.custId);
