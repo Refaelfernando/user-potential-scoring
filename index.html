@@ -147,7 +147,7 @@
   <div class="header-top">
     <div>
       <h1>✨ User Potential Scoring</h1>
-      <div class="sub">Cari tahu siapa yang paling potensial buat di-follow up — otomatis update dari data terbaru</div>
+      <div class="sub">Alat buat naikin Delivery Rate, Read Rate, &amp; Created Rate di channel WhatsApp — otomatis update dari data terbaru</div>
     </div>
     <div class="status" id="statusBox">
       <div>Terakhir sync: <b id="lastSync">—</b> <span id="syncIndicator" style="display:none;color:#CFE3DC;">⟳ syncing...</span></div>
@@ -222,6 +222,17 @@
     </div>
   </div>
 
+  <div class="analysis-panel" style="margin-top:0;">
+    <h2>📶 Performa Funnel WhatsApp</h2>
+    <div class="lead">3 metrik inti yang jadi fokus tools ini — dihitung dari data historis WA, live tiap refresh.</div>
+    <div class="method-grid" id="waFunnelBox">
+      <div class="method-box"><div class="num" id="waDeliveryRate">—</div><div class="lbl">Delivery Rate</div><div class="desc">Delivered ÷ Sent</div></div>
+      <div class="method-box"><div class="num" id="waReadRate">—</div><div class="lbl">Read Rate</div><div class="desc">Read ÷ Delivered</div></div>
+      <div class="method-box"><div class="num" id="waCreatedRate">—</div><div class="lbl">Created Rate</div><div class="desc">Created (WhatsApp) ÷ Sent</div></div>
+    </div>
+    <div class="insight-box" id="waFunnelInsight">Menghitung...</div>
+  </div>
+
   <div class="analysis-panel">
     <h2>🎯 Segmen Mana yang Harus Dikejar?</h2>
     <div class="lead">Dihitung ulang otomatis dari data terbaru di Google Sheet — penjelasan kenapa tiap tier jadi prioritas (scroll ke atas buat ambil daftar User ID-nya).</div>
@@ -231,10 +242,10 @@
     </div>
 
     <div class="analysis-sub">
-      <h3>🎯 Kalkulator Target Bulanan</h3>
+      <h3>🎯 Kalkulator Target Created WhatsApp Bulanan</h3>
       <div class="lead" style="margin-bottom:12px;">Kotak di bawah otomatis ke-isi <b>perkiraan konversi saat ini + 10%</b> — ganti angkanya kalau targetnya beda. Sistem bandingin ke perkiraan konversi saat ini &amp; kasih rekomendasi kuantitatif buat nutup gap-nya. <i>Catatan jujur: ini kalkulator simulasi berbasis data historis, bukan model yang "belajar" dari angka target itu sendiri — target cuma jadi patokan, bukan data latih.</i></div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
-        <label for="targetInput" style="font-size:13px;font-weight:600;">Target Created / bulan:</label>
+        <label for="targetInput" style="font-size:13px;font-weight:600;">Target Created WhatsApp / bulan:</label>
         <input type="number" id="targetInput" min="0" placeholder="mis. 2000" style="width:160px;" oninput="renderGapCalculator()">
       </div>
       <div id="gapCalcResult"></div>
@@ -996,7 +1007,7 @@ function renderGapCalculator(){
 
   if(gap <= 0){
     el.innerHTML = `<div class="gap-summary over">
-      <div class="row"><span>Perkiraan konversi saat ini</span><b>~${Math.round(currentTotal).toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Perkiraan Created WhatsApp saat ini</span><b>~${Math.round(currentTotal).toLocaleString('id-ID')}</b></div>
       <div class="row"><span>Target kamu</span><b>${target.toLocaleString('id-ID')}</b></div>
       <div class="row"><span>Status</span><b style="color:var(--high);">✅ Sudah tercapai, ada headroom ~${Math.round(currentTotal-target).toLocaleString('id-ID')}</b></div>
     </div>`;
@@ -1016,15 +1027,8 @@ function renderGapCalculator(){
 
   const pctIncrease = currentTotal>0 ? ((gap/currentTotal)*100).toFixed(1) : '-';
 
-  const {tally, totalCreated} = computeChannelBreakdown();
-  const channelRows = Object.entries(tally).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
-  const channelHtml = totalCreated>0 ? channelRows.map(([ch,n])=>
-    `<div class="stat-line"><span class="k">${ch}</span><span><b>${n.toLocaleString('id-ID')}</b> (${(n/totalCreated*100).toFixed(1)}%)</span></div>`
-  ).join('') : '<div style="font-size:12px;color:var(--muted);">Belum ada data histori Created buat breakdown channel.</div>';
-  const waShare = totalCreated>0 ? (tally.WhatsApp/totalCreated*100) : 0;
-
   el.innerHTML = `<div class="gap-summary">
-      <div class="row"><span>Perkiraan konversi saat ini</span><b>~${Math.round(currentTotal).toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Perkiraan Created WhatsApp saat ini</span><b>~${Math.round(currentTotal).toLocaleString('id-ID')}</b></div>
       <div class="row"><span>Target kamu</span><b>${target.toLocaleString('id-ID')}</b> (${gap>0?'+':''}${pctIncrease}%)</div>
       <div class="row"><span>Gap yang perlu ditutup</span><b style="color:var(--low);">~${Math.ceil(gap).toLocaleString('id-ID')}</b></div>
     </div>
@@ -1047,25 +1051,51 @@ function renderGapCalculator(){
       </div>
     </div>
     <div class="analysis-sub">
-      <h3>📡 Channel & Komunikasi</h3>
-      <div class="scenario-grid">
-        <div class="scenario-card">
-          <h4>Channel yang berkontribusi ke Created (histori)</h4>
-          ${channelHtml}
-          ${totalCreated>0 ? `<p>Data yang bisa kita KONTROL langsung di dashboard ini cuma WhatsApp (~${waShare.toFixed(1)}% dari total Created historis). Sisanya (Organic/Telesales/POM) di luar kendali campaign WA — kalau mau naikin total lewat channel itu, perlu koordinasi terpisah ke tim yang pegang masing-masing channel, bukan lewat tools ini.</p>` : ''}
-        </div>
-        <div class="scenario-card">
-          <h4>Rencana komunikasi</h4>
-          <p><b>Skenario A (perbaikan delivery):</b> gak perlu ubah konten — fokus infrastruktur pengiriman.</p>
-          <p><b>Skenario B (reach baru):</b> pakai rotasi keyword harian yang udah ada di tabel "Rekomendasi Aksi" (5 tema: dana darurat, kebutuhan mendesak, modal usaha, pendidikan, renovasi) — beda pesan tiap hari biar gak keliatan spam berulang, dan disesuaikan sama tier tujuan (High = personalisasi, Medium/Low = angle kebutuhan generik).</p>
-          <p style="color:var(--muted);font-size:11px;">Estimasi di atas berbasis data historis WA doang — kalau target juga ngarepin kontribusi dari channel lain, itu perlu asumsi terpisah yang gak bisa dihitung dari data yang ada di dashboard ini.</p>
-        </div>
+      <h3>📲 Rencana Komunikasi WhatsApp</h3>
+      <div class="scenario-card">
+        <p><b>Skenario A (perbaikan delivery):</b> gak perlu ubah konten — fokus infrastruktur pengiriman (kualitas nomor, sending window, reputasi sender).</p>
+        <p><b>Skenario B (reach baru):</b> pakai rotasi keyword harian yang udah ada di tabel "Rekomendasi Aksi" (5 tema: dana darurat, kebutuhan mendesak, modal usaha, pendidikan, renovasi) — beda pesan tiap hari biar gak keliatan spam berulang, disesuaikan sama tier tujuan (High = personalisasi, Medium/Low = angle kebutuhan generik).</p>
+        <p style="color:var(--muted);font-size:11px;">Target &amp; gap di atas dihitung murni dari Created yang attributable ke channel WhatsApp (bukan total Created bisnis) — konsisten dengan fokus tools ini buat naikin performa funnel WA secara spesifik.</p>
       </div>
     </div>
     <div class="insight-box" style="margin-top:12px;">Realistisnya, kombinasi A+B biasanya lebih efektif &amp; lebih cepat dibanding andalin satu skenario doang — pakai angka di atas sebagai patokan awal, lalu validasi lewat A/B test kecil sebelum rollout penuh.</div>`;
 }
 
+function renderWaFunnelPanel(){
+  const sentN = FUNNEL.Sent.n + FUNNEL.Delivered.n + FUNNEL.Read.n; // total yang pernah di-Sent (semua yang lanjut ke tahap manapun)
+  const deliveredN = FUNNEL.Delivered.n + FUNNEL.Read.n; // total yang delivered (baik lanjut dibaca atau enggak)
+  const readN = FUNNEL.Read.n;
+  const deliveredEvents = FUNNEL.Delivered.events + FUNNEL.Read.events;
+  const readEvents = FUNNEL.Read.events;
+  const sentEvents = FUNNEL.Sent.events + FUNNEL.Delivered.events + FUNNEL.Read.events;
+
+  const deliveryRate = sentN>0 ? deliveredN/sentN : 0;
+  const readRate = deliveredN>0 ? readN/deliveredN : 0;
+  const createdRate = sentN>0 ? sentEvents/sentN : 0;
+
+  document.getElementById('waDeliveryRate').textContent = fmtPct(deliveryRate, 1);
+  document.getElementById('waReadRate').textContent = fmtPct(readRate, 1);
+  document.getElementById('waCreatedRate').textContent = fmtPct(createdRate, 2);
+
+  // Diagnosis otomatis: bandingin uplift Sent->Delivered vs Delivered->Read, fokusin ke yang paling nge-gap
+  const sd = twoPropZTest(FUNNEL.Sent.events, FUNNEL.Sent.n, FUNNEL.Delivered.events, FUNNEL.Delivered.n);
+  const dr = twoPropZTest(FUNNEL.Delivered.events, FUNNEL.Delivered.n, FUNNEL.Read.events, FUNNEL.Read.n);
+  const sdSig2 = !isNaN(sd.pVal) && sd.pVal < 0.05;
+  const drSig2 = !isNaN(dr.pVal) && dr.pVal < 0.05;
+
+  let insight;
+  if(deliveryRate < 0.5){
+    insight = `<b>Bottleneck utama: DELIVERY.</b> Delivery Rate cuma ${fmtPct(deliveryRate,1)} — lebih dari separuh pesan yang dikirim gak sampai ke tujuan. ${sdSig2 ? 'Ini juga tervalidasi signifikan secara statistik (lihat uji signifikansi funnel di bawah).' : ''} Prioritas: audit kualitas nomor, sending window, reputasi sender WA Business API — BUKAN isi pesan.`;
+  } else if(!drSig2){
+    insight = `<b>Delivery Rate (${fmtPct(deliveryRate,1)}) udah lumayan, tapi Read Rate (${fmtPct(readRate,1)}) gak menunjukkan hubungan signifikan ke Created</b> — artinya begitu delivered, dibaca atau enggak GAK ngaruh banyak ke peluang convert. Investasi ke konten/copywriting kemungkinan low-impact; tetap fokus ke deliverability.`;
+  } else {
+    insight = `<b>Funnel-nya sehat</b> — Delivery Rate ${fmtPct(deliveryRate,1)}, dan Read secara statistik signifikan ngaruh ke Created. Di titik ini, investasi ke konten/copywriting (buat naikin Read Rate) baru worth dicoba.`;
+  }
+  document.getElementById('waFunnelInsight').innerHTML = insight + ` Created Rate keseluruhan (dari Sent, khusus channel WhatsApp) saat ini ${fmtPct(createdRate,2)}.`;
+}
+
 function renderAnalysis(){
+  renderWaFunnelPanel();
   /* ---- 0a. Status training model ---- */
   function pct(x){ return (x*100).toFixed(1)+"%"; }
   const drift = Math.abs(ACTIVE.intercept - BASELINE.intercept) > 0.5
