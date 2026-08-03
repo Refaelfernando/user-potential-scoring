@@ -30,6 +30,10 @@
   .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.22);}
   .pill-btn{padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;background:rgba(255,255,255,.16);color:#fff;border:1.5px solid rgba(255,255,255,.35);transition:background .12s ease, transform .12s ease;}
   .pill-btn:hover{background:rgba(255,255,255,.28);transform:translateY(-1px);}
+  .filter-dropdown{position:relative;display:inline-block;}
+  .filter-dropdown-panel{position:absolute;top:calc(100% + 6px);left:0;background:#fff;color:var(--ink);border-radius:14px;box-shadow:var(--shadow-lg);padding:14px 16px;min-width:300px;z-index:50;}
+  .filter-dropdown-panel label{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;line-height:1.4;padding:6px 0;cursor:pointer;}
+  .filter-dropdown-panel input[type=checkbox]{margin-top:2px;flex-shrink:0;}
   main{max-width:1180px;margin:0 auto;padding:26px 20px 60px;}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:22px;}
   .card{border-radius:20px;padding:20px 22px;cursor:pointer;border:2px solid transparent;transition:transform .15s ease, box-shadow .15s ease;background:var(--card);box-shadow:var(--shadow);}
@@ -157,9 +161,17 @@
   <div class="toolbar">
     <button id="refreshBtn" class="pill-btn" onclick="manualRefresh()">↻ Refresh</button>
     <button id="retrainToggle" class="pill-btn" onclick="toggleRetrain()">Auto-Retrain: —</button>
-    <button id="suppressToggle" class="pill-btn" onclick="toggleSuppress()">Filter Gagal Kirim: —</button>
-    <button id="createdToggle" class="pill-btn" onclick="toggleExcludeCreated()">Takeout Sudah Created: —</button>
-    <button id="freqCapToggle" class="pill-btn" onclick="toggleFreqCap()">Takeout Kena Cap Frekuensi: —</button>
+    <div class="filter-dropdown">
+      <button class="pill-btn" onclick="toggleFilterDropdown()">☰ Filter Populasi ▾</button>
+      <div class="filter-dropdown-panel" id="filterDropdownPanel" style="display:none;">
+        <label><input type="checkbox" id="cbSuppress" onchange="onFilterCheckboxChange()"> Keluarkan user gagal kirim persisten (2 bulan berturut-turut)</label>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">
+          <div style="font-weight:700;font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Takeout Sudah Created di Bulan:</div>
+          <div id="createdMonthCheckboxes" style="display:flex;flex-direction:column;gap:2px;">Memuat daftar bulan...</div>
+        </div>
+        <label><input type="checkbox" id="cbFreqCap" onchange="onFilterCheckboxChange()"> Takeout user yang sudah kena cap frekuensi mingguan</label>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -426,7 +438,8 @@ function twoPropZTest(x1,n1,x2,n2){
 /* ============== MODEL (WOE + Logistic Regression) ============== */
 let AUTO_RETRAIN = true; // true = model dilatih ulang otomatis tiap refresh dari data live. false = pakai bobot baseline tetap. Bisa di-toggle lewat tombol "Auto-Retrain" di header.
 let FILTER_SUPPRESS_UNDELIVERABLE = true; // true = keluarkan user yang gagal delivered 2 periode berturut-turut (Jun & Jul) dari tier/list/kartu (training model tetap pakai semua data, tidak kena filter ini)
-let FILTER_EXCLUDE_CREATED = true; // true = keluarkan user yang Created Jul > 0 (sudah convert bulan ini) dari tier/list/kartu
+let EXCLUDE_CREATED_MONTHS = new Set(); // Set nama bulan - user yang Created di bulan manapun di dalam Set ini di-exclude dari tier/list/kartu
+let CREATED_MONTHS_INITIALIZED = false; // dipakai buat nge-default centang "bulan berjalan" sekali doang di load pertama
 let FILTER_FREQ_CAP = false; // default OFF - filter ini secara struktural cenderung nge-exclude tier High (orang yang scoring tinggi butuh Sent tinggi juga, jadi hampir selalu "kena cap"). Nyalain manual kalau mau dites, tapi hati-hati bisa ngosongin High.
 const FREQ_CAP = {High: 2, Medium: 3, Low: 1}; // cap max x/minggu sesuai rekomendasi di tabel aksi
 
@@ -753,7 +766,7 @@ async function loadData(){
           read: parseInt(r["Read"]) || 0,
           createdNow: getCreatedFlag(r)
         };
-        recordCustHistory(custId, currentMonthFile.name + ' (berjalan)', r);
+        recordCustHistory(custId, currentMonthFile.name, r);
       });
     }
 
@@ -850,7 +863,10 @@ async function loadData(){
       const eng2 = currentEngMap[custId] || {sent:0, delivered:0, read:0, createdNow:0};
       const sentJul = eng2.sent, deliveredJul = eng2.delivered, readJul = eng2.read;
 
-      if(FILTER_EXCLUDE_CREATED && eng2.createdNow){ excludedCreated++; return; }
+      if(EXCLUDE_CREATED_MONTHS.size > 0){
+        const createdMonths = getCreatedMonths(custId);
+        if(createdMonths.some(m => EXCLUDE_CREATED_MONTHS.has(m))){ excludedCreated++; return; }
+      }
       // Sinyal nomor kemungkinan bermasalah: user ini gak pernah delivered padahal udah lumayan sering dikirim
       const persistentNonDelivery = sentJul >= 5 && deliveredJul === 0;
       if(FILTER_SUPPRESS_UNDELIVERABLE && persistentNonDelivery){ excludedUndeliverable++; return; }
@@ -896,6 +912,7 @@ async function loadData(){
     renderAnalysis();
     renderGapCalculator();
     populateCohortFilter();
+    populateCreatedMonthCheckboxes();
     document.getElementById('lastSync').textContent = new Date().toLocaleString('id-ID');
   }catch(e){
     body.innerHTML = `<div class="err">Gagal memuat data: ${e.message}<br><br>
@@ -1371,7 +1388,11 @@ function renderTable(){
   }
 
   if(rows.length===0){
-    body.innerHTML = subtierHtml + '<div class="empty">Tidak ada user yang cocok.</div>';
+    let emptyMsg = 'Tidak ada user yang cocok.';
+    if(monthSel && EXCLUDE_CREATED_MONTHS.has(monthSel)){
+      emptyMsg = `Kosong karena 2 filter lagi bentrok: filter bulan "${monthSel}" nyari user yang UDAH Created di bulan itu, tapi bulan "${monthSel}" juga lagi dicentang di "Takeout Sudah Created" (header → Filter Populasi) — jadi user itu udah dikeluarin dari daftar duluan. Uncentang bulan "${monthSel}" di situ kalau mau lihat siapa yang Created di bulan itu.`;
+    }
+    body.innerHTML = subtierHtml + `<div class="empty">${emptyMsg}</div>`;
     return;
   }
   const maxShow = 2000;
@@ -1488,43 +1509,40 @@ async function toggleRetrain(){
   await manualRefresh();
 }
 
-function updateSuppressButton(){
-  const btn = document.getElementById('suppressToggle');
-  btn.textContent = FILTER_SUPPRESS_UNDELIVERABLE ? '🟢 Filter Gagal Kirim: ON' : '⚪ Filter Gagal Kirim: OFF';
-  btn.title = 'Keluarkan user yang gagal delivered 2 periode berturut-turut (Jun & Jul) dari kartu/tier/list. Tidak memengaruhi training model.';
+function toggleFilterDropdown(){
+  const panel = document.getElementById('filterDropdownPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
 }
-async function toggleSuppress(){
-  FILTER_SUPPRESS_UNDELIVERABLE = !FILTER_SUPPRESS_UNDELIVERABLE;
-  updateSuppressButton();
+function syncFilterCheckboxes(){
+  document.getElementById('cbSuppress').checked = FILTER_SUPPRESS_UNDELIVERABLE;
+  document.getElementById('cbFreqCap').checked = FILTER_FREQ_CAP;
+}
+async function onFilterCheckboxChange(){
+  FILTER_SUPPRESS_UNDELIVERABLE = document.getElementById('cbSuppress').checked;
+  FILTER_FREQ_CAP = document.getElementById('cbFreqCap').checked;
   await manualRefresh();
 }
-
-function updateCreatedButton(){
-  const btn = document.getElementById('createdToggle');
-  btn.textContent = FILTER_EXCLUDE_CREATED ? '🟢 Takeout Sudah Created: ON' : '⚪ Takeout Sudah Created: OFF';
-  btn.title = 'Keluarkan user yang sudah Created bulan ini (Created Jul > 0) dari kartu/tier/list. Tidak memengaruhi training model.';
+function populateCreatedMonthCheckboxes(){
+  const container = document.getElementById('createdMonthCheckboxes');
+  const months = [...ARCHIVE_TABS_LOADED, CUR_LABEL].filter(Boolean);
+  // Default sekali doang di load pertama: centang bulan berjalan aja (sama kayak perilaku sebelumnya)
+  if(!CREATED_MONTHS_INITIALIZED && CUR_LABEL){
+    EXCLUDE_CREATED_MONTHS.add(CUR_LABEL);
+    CREATED_MONTHS_INITIALIZED = true;
+  }
+  container.innerHTML = months.map(m=>{
+    const checked = EXCLUDE_CREATED_MONTHS.has(m) ? 'checked' : '';
+    return `<label><input type="checkbox" value="${m}" ${checked} onchange="onCreatedMonthCheckboxChange(this)"> ${m}</label>`;
+  }).join('') || '<div style="font-size:11.5px;color:var(--muted);">Belum ada bulan yang kemuat.</div>';
 }
-async function toggleExcludeCreated(){
-  FILTER_EXCLUDE_CREATED = !FILTER_EXCLUDE_CREATED;
-  updateCreatedButton();
-  await manualRefresh();
-}
-
-function updateFreqCapButton(){
-  const btn = document.getElementById('freqCapToggle');
-  btn.textContent = FILTER_FREQ_CAP ? '🟢 Takeout Kena Cap Frekuensi: ON' : '⚪ Takeout Kena Cap Frekuensi: OFF';
-  btn.title = `Keluarkan user yang perkiraan pengiriman mingguannya sudah lewat rekomendasi cap tier-nya (High >${FREQ_CAP.High}x, Medium >${FREQ_CAP.Medium}x, Low >${FREQ_CAP.Low}x per minggu). ⚠️ HATI-HATI: filter ini cenderung ngosongin tier High karena user skor tinggi biasanya juga udah sering dikirim. Tidak memengaruhi training model.`;
-}
-async function toggleFreqCap(){
-  FILTER_FREQ_CAP = !FILTER_FREQ_CAP;
-  updateFreqCapButton();
+async function onCreatedMonthCheckboxChange(el){
+  if(el.checked) EXCLUDE_CREATED_MONTHS.add(el.value);
+  else EXCLUDE_CREATED_MONTHS.delete(el.value);
   await manualRefresh();
 }
 
 updateRetrainButton();
-updateSuppressButton();
-updateCreatedButton();
-updateFreqCapButton();
+syncFilterCheckboxes();
 loadData();
 // Auto-refresh berkala (sama seperti CRM Dashboard) - fetch ulang tanpa perlu aksi manual dari user
 setInterval(async ()=>{
