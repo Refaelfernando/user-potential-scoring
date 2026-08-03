@@ -232,7 +232,7 @@
 
     <div class="analysis-sub">
       <h3>🎯 Kalkulator Target Bulanan</h3>
-      <div class="lead" style="margin-bottom:12px;">Isi target Created bulan ini, sistem bandingin ke perkiraan konversi saat ini &amp; kasih rekomendasi kuantitatif buat nutup gap-nya. <i>Catatan jujur: ini kalkulator simulasi berbasis data historis, bukan model yang "belajar" dari angka target itu sendiri — target cuma jadi patokan, bukan data latih.</i></div>
+      <div class="lead" style="margin-bottom:12px;">Kotak di bawah otomatis ke-isi <b>perkiraan konversi saat ini + 10%</b> — ganti angkanya kalau targetnya beda. Sistem bandingin ke perkiraan konversi saat ini &amp; kasih rekomendasi kuantitatif buat nutup gap-nya. <i>Catatan jujur: ini kalkulator simulasi berbasis data historis, bukan model yang "belajar" dari angka target itu sendiri — target cuma jadi patokan, bukan data latih.</i></div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
         <label for="targetInput" style="font-size:13px;font-weight:600;">Target Created / bulan:</label>
         <input type="number" id="targetInput" min="0" placeholder="mis. 2000" style="width:160px;" oninput="renderGapCalculator()">
@@ -954,17 +954,40 @@ function computeLiveAucKs(){
 // Kalkulator gap target - simulasi berbasis data historis (BUKAN model yang "belajar" dari
 // angka target). Dua skenario: (A) perbaikan delivery pada user status "Sent" yang belum
 // delivered, (B) perluasan reach ke user "NotSent" yang belum pernah dikontak bulan ini.
+function computeChannelBreakdown(){
+  const tally = {Organic:0, WhatsApp:0, Telesales:0, POM:0, 'Tidak diketahui':0};
+  let totalCreated = 0;
+  Object.values(CUST_HISTORY).forEach(hist=>{
+    hist.forEach(h=>{
+      if(h.created > 0){
+        totalCreated++;
+        if(h.sources.length){
+          h.sources.forEach(s=>{ if(tally[s]!==undefined) tally[s]++; });
+        } else {
+          tally['Tidak diketahui']++;
+        }
+      }
+    });
+  });
+  return {tally, totalCreated};
+}
+
 function renderGapCalculator(){
   const el = document.getElementById('gapCalcResult');
   if(!el) return;
-  const raw = document.getElementById('targetInput').value;
+  const inputEl = document.getElementById('targetInput');
+  const currentTotal = (TIER_STATS.High?.sumProb||0) + (TIER_STATS.Medium?.sumProb||0) + (TIER_STATS.Low?.sumProb||0);
+  // Default target = current +10% - cuma di-isi otomatis kalau kotaknya masih kosong (gak nimpa input manual user)
+  if(!inputEl.value && currentTotal > 0){
+    inputEl.value = Math.round(currentTotal * 1.1);
+  }
+  const raw = inputEl.value;
   const target = parseInt(raw);
   if(!raw || isNaN(target) || target<=0){
     el.innerHTML = '';
     return;
   }
 
-  const currentTotal = (TIER_STATS.High?.sumProb||0) + (TIER_STATS.Medium?.sumProb||0) + (TIER_STATS.Low?.sumProb||0);
   const gap = target - currentTotal;
 
   if(gap <= 0){
@@ -987,19 +1010,28 @@ function renderGapCalculator(){
   const neededB = sentRate>0 ? Math.ceil(gap/sentRate) : null;
   const feasibleB = neededB!==null && poolB>0 && neededB<=poolB;
 
+  const pctIncrease = currentTotal>0 ? ((gap/currentTotal)*100).toFixed(1) : '-';
+
+  const {tally, totalCreated} = computeChannelBreakdown();
+  const channelRows = Object.entries(tally).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const channelHtml = totalCreated>0 ? channelRows.map(([ch,n])=>
+    `<div class="stat-line"><span class="k">${ch}</span><span><b>${n.toLocaleString('id-ID')}</b> (${(n/totalCreated*100).toFixed(1)}%)</span></div>`
+  ).join('') : '<div style="font-size:12px;color:var(--muted);">Belum ada data histori Created buat breakdown channel.</div>';
+  const waShare = totalCreated>0 ? (tally.WhatsApp/totalCreated*100) : 0;
+
   el.innerHTML = `<div class="gap-summary">
       <div class="row"><span>Perkiraan konversi saat ini</span><b>~${Math.round(currentTotal).toLocaleString('id-ID')}</b></div>
-      <div class="row"><span>Target kamu</span><b>${target.toLocaleString('id-ID')}</b></div>
+      <div class="row"><span>Target kamu</span><b>${target.toLocaleString('id-ID')}</b> (${gap>0?'+':''}${pctIncrease}%)</div>
       <div class="row"><span>Gap yang perlu ditutup</span><b style="color:var(--low);">~${Math.ceil(gap).toLocaleString('id-ID')}</b></div>
     </div>
     <div class="scenario-grid">
       <div class="scenario-card">
         <h4>Skenario A — Perbaikan Delivery</h4>
-        <div style="font-size:11.5px;color:var(--muted);">Uplift Delivered vs Sent (data Jun): ${fmtPct(sentRate)} → ${fmtPct(deliveredRate)}</div>
+        <div style="font-size:11.5px;color:var(--muted);">Uplift Delivered vs Sent (data historis): ${fmtPct(sentRate)} → ${fmtPct(deliveredRate)}</div>
         <div class="big-num">${neededA!==null ? '~'+neededA.toLocaleString('id-ID') : 'n/a'}</div>
         <div style="font-size:12px;color:var(--muted);">user perlu pindah dari status "Sent" ke "Delivered"</div>
         <span class="feas ${feasibleA?'ok':'warn'}">${feasibleA ? `✅ Feasible — pool saat ini ${poolA.toLocaleString('id-ID')} user` : `⚠️ Pool saat ini cuma ${poolA.toLocaleString('id-ID')} user, kemungkinan gak cukup sendirian`}</span>
-        <p>Ini skenario paling tervalidasi (dari uji signifikansi funnel) — fokus ke kualitas nomor, sending window, &amp; reputasi sender WA, bukan konten pesan.</p>
+        <p><b>Apa yang harus dilakukan:</b> audit kualitas nomor & opt-in status, cek sending window/rate-limit WA Business API, pertimbangkan verified sender/template dengan approval rate lebih tinggi. Ini BUKAN soal isi pesan — jangan alokasikan waktu buat redesign konten di skenario ini.</p>
       </div>
       <div class="scenario-card">
         <h4>Skenario B — Perluasan Reach</h4>
@@ -1007,7 +1039,23 @@ function renderGapCalculator(){
         <div class="big-num">${neededB!==null ? '~'+neededB.toLocaleString('id-ID') : 'n/a'}</div>
         <div style="font-size:12px;color:var(--muted);">user baru (belum pernah dikirim) perlu mulai dikontak</div>
         <span class="feas ${feasibleB?'ok':'warn'}">${feasibleB ? `✅ Feasible — pool saat ini ${poolB.toLocaleString('id-ID')} user` : `⚠️ Pool saat ini cuma ${poolB.toLocaleString('id-ID')} user, kemungkinan gak cukup sendirian`}</span>
-        <p>Estimasi ini konservatif (pakai rate stage "Sent" sebagai proksi) — kontak baru belum tentu langsung delivered/read, jadi realisasinya bisa lebih rendah dari perkiraan.</p>
+        <p><b>Apa yang harus dilakukan:</b> mulai kontak user "NotSent" pakai keyword hari ini (lihat tabel "Konten/Keyword Hari Ini" di bawah) — buat first-touch, angle urgensi/kebutuhan mendesak biasanya lebih efektif dibanding angle edukatif, karena user ini belum ada exposure sama sekali ke pesan kita.</p>
+      </div>
+    </div>
+    <div class="analysis-sub">
+      <h3>📡 Channel & Komunikasi</h3>
+      <div class="scenario-grid">
+        <div class="scenario-card">
+          <h4>Channel yang berkontribusi ke Created (histori)</h4>
+          ${channelHtml}
+          ${totalCreated>0 ? `<p>Data yang bisa kita KONTROL langsung di dashboard ini cuma WhatsApp (~${waShare.toFixed(1)}% dari total Created historis). Sisanya (Organic/Telesales/POM) di luar kendali campaign WA — kalau mau naikin total lewat channel itu, perlu koordinasi terpisah ke tim yang pegang masing-masing channel, bukan lewat tools ini.</p>` : ''}
+        </div>
+        <div class="scenario-card">
+          <h4>Rencana komunikasi</h4>
+          <p><b>Skenario A (perbaikan delivery):</b> gak perlu ubah konten — fokus infrastruktur pengiriman.</p>
+          <p><b>Skenario B (reach baru):</b> pakai rotasi keyword harian yang udah ada di tabel "Rekomendasi Aksi" (5 tema: dana darurat, kebutuhan mendesak, modal usaha, pendidikan, renovasi) — beda pesan tiap hari biar gak keliatan spam berulang, dan disesuaikan sama tier tujuan (High = personalisasi, Medium/Low = angle kebutuhan generik).</p>
+          <p style="color:var(--muted);font-size:11px;">Estimasi di atas berbasis data historis WA doang — kalau target juga ngarepin kontribusi dari channel lain, itu perlu asumsi terpisah yang gak bisa dihitung dari data yang ada di dashboard ini.</p>
+        </div>
       </div>
     </div>
     <div class="insight-box" style="margin-top:12px;">Realistisnya, kombinasi A+B biasanya lebih efektif &amp; lebih cepat dibanding andalin satu skenario doang — pakai angka di atas sebagai patokan awal, lalu validasi lewat A/B test kecil sebelum rollout penuh.</div>`;
@@ -1129,68 +1177,32 @@ function renderAnalysis(){
         <td>${fmtPct(r.n/totalN,1)}</td><td>${fmtPct(r.avgProb)}</td><td>~${Math.round(r.expected).toLocaleString('id-ID')}</td></tr>`;
     }).join('')}</tbody>`;
 
-  /* ---- 3. Jawaban langsung: segmen mana yang dikejar (efisiensi vs volume vs avoid) ---- */
+  /* ---- 3. Jawaban langsung: 3 kartu TETAP, High/Medium/Low, gak ada lagi re-ranking dinamis
+     (biar gak ada lagi kejadian kartu keliatan dobel/tumpang tindih) ---- */
   const high = tierRows.find(r=>r.tier==='High');
   const medium = tierRows.find(r=>r.tier==='Medium');
   const low = tierRows.find(r=>r.tier==='Low');
-  const volRow = tierRows.find(r=>r.tier===volumeTier);
-  const isDegenerate = volumeTier === 'Low'; // kalau ini kejadian, kemungkinan besar High/Medium kosong karena masalah data/training, bukan temuan asli
-  const sameAsHigh = volumeTier === high.tier && !isDegenerate; // High menang di rate DAN volume - valid, bukan bug, tapi perlu penjelasan biar gak keliatan kayak kartu dobel
-  let volRole, volWhy;
-  if(isDegenerate){
-    volRole = '⚠️ Data Bermasalah';
-    volWhy = `⚠️ Ini kejadian aneh — tier "volume terbesar" harusnya bukan Low. Kemungkinan besar High/Medium lagi kosong/kekecilan gara-gara masalah data atau training (cek banner peringatan di atas &amp; baris diagnostik di bawah header). Jangan jadiin ini rekomendasi asli dulu sebelum itu dibenerin.`;
-  } else if(sameAsHigh){
-    volRole = 'Juga Volume Terbesar';
-    volWhy = `Tier yang sama kayak di atas (${high.tier}) ternyata JUGA punya perkiraan total konversi paling besar — bukan cuma paling efisien per-kontak, tapi total dampaknya juga paling tinggi. Artinya tier Medium/Low performanya jauh di bawah ekspektasi dibanding populasinya, worth dicek kenapa.`;
-  } else {
-    volRole = 'Peluang Volume Terbesar';
-    volWhy = `Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.`;
-  }
 
-  const mergedCard = sameAsHigh ? `
-    <div class="priority-card role-eff" style="grid-column:span 2;">
-      <div class="rank">#1</div>
-      <div class="role" style="color:var(--high);">Paling Efisien &amp; Volume Terbesar</div>
-      <div class="tier-name">${high.tier} Potential</div>
-      <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(high.avgProb)}</b></span></div>
-      <div class="stat-line"><span class="k">Jumlah user</span><span>${high.n.toLocaleString('id-ID')} (${fmtPct(high.n/totalN,1)})</span></div>
-      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(high.expected).toLocaleString('id-ID')}</b></span></div>
-      <div class="why">Tier ini menang di DUA ukuran sekaligus — cost per-conversion paling rendah (paling efisien per kontak), DAN karena populasinya juga cukup besar, total perkiraan konversinya paling tinggi dibanding tier lain. Ini prioritas utama tanpa perlu trade-off efisiensi vs volume — kejar duluan dan alokasikan budget paling besar ke sini. Tanda tier Medium/Low performanya jauh di bawah ekspektasi, worth dicek kenapa.</div>
-      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${high.tier}')">Lihat Daftar User ID ↑</button>
-    </div>` : `
-    <div class="priority-card role-eff">
-      <div class="rank">#1</div>
-      <div class="role" style="color:var(--high);">Paling Efisien per Kontak</div>
-      <div class="tier-name">${high.tier} Potential</div>
-      <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(high.avgProb)}</b></span></div>
-      <div class="stat-line"><span class="k">Jumlah user</span><span>${high.n.toLocaleString('id-ID')} (${fmtPct(high.n/totalN,1)})</span></div>
-      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span>~${Math.round(high.expected).toLocaleString('id-ID')}</span></div>
-      <div class="why">Setiap pesan yang dikirim ke sini punya peluang convert tertinggi — cost per-conversion paling rendah. Kejar duluan, kalau budget terbatas ini yang harus tetap jalan.</div>
-      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${high.tier}')">Lihat Daftar User ID ↑</button>
-    </div>
-    <div class="priority-card role-vol">
-      <div class="rank">#2</div>
-      <div class="role" style="color:${isDegenerate?'var(--low)':'var(--med)'};">${volRole}</div>
-      <div class="tier-name">${volRow.tier} Potential</div>
-      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(volRow.expected).toLocaleString('id-ID')}</b></span></div>
-      <div class="stat-line"><span class="k">Jumlah user</span><span>${volRow.n.toLocaleString('id-ID')} (${fmtPct(volRow.n/totalN,1)})</span></div>
-      <div class="stat-line"><span class="k">Conversion rate</span><span>${fmtPct(volRow.avgProb)}</span></div>
-      <div class="why">${volWhy}</div>
-      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${volRow.tier}')">Lihat Daftar User ID ↑</button>
-    </div>`;
+  const cardDefs = [
+    {row: high, label: 'Paling Efisien', color: 'var(--high)', bgClass: 'role-eff',
+      why: `Setiap pesan yang dikirim ke sini punya peluang convert tertinggi — cost per-conversion paling rendah. Kejar duluan, kalau budget terbatas ini yang harus tetap jalan.`},
+    {row: medium, label: 'Populasi Menengah', color: 'var(--med)', bgClass: 'role-vol',
+      why: `Rate per-user lebih rendah dari High, tapi populasinya lebih besar — kolam yang paling layak dapat tambahan effort/budget kalau mau naikin volume konversi secara keseluruhan.`},
+    {row: low, label: 'Minim Prioritas', color: 'var(--low)', bgClass: 'role-avoid',
+      why: `Cost per-conversion di sini paling mahal — kirim WA personal ke segmen ini kurang worth it. Turunkan prioritas, alihkan budget ke tier di atas.`},
+  ];
 
-  document.getElementById('priorityGrid').innerHTML = mergedCard + `
-    <div class="priority-card role-avoid">
-      <div class="rank">#3</div>
-      <div class="role" style="color:var(--low);">Minim Prioritas</div>
-      <div class="tier-name">${low.tier} Potential</div>
-      <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(low.avgProb)}</b></span></div>
-      <div class="stat-line"><span class="k">Jumlah user</span><span>${low.n.toLocaleString('id-ID')} (${fmtPct(low.n/totalN,1)})</span></div>
-      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span>~${Math.round(low.expected).toLocaleString('id-ID')}</span></div>
-      <div class="why">Cost per-conversion di sini paling mahal — kirim WA personal ke segmen ini kurang worth it. Turunkan prioritas, alihkan budget ke tier di atas.</div>
-      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${low.tier}')">Lihat Daftar User ID ↑</button>
-    </div>`;
+  document.getElementById('priorityGrid').innerHTML = cardDefs.map((c,i)=>`
+    <div class="priority-card ${c.bgClass}">
+      <div class="rank">#${i+1}</div>
+      <div class="role" style="color:${c.color};">${c.label}</div>
+      <div class="tier-name">${c.row.tier} Potential</div>
+      <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(c.row.avgProb)}</b></span></div>
+      <div class="stat-line"><span class="k">Jumlah user</span><span>${c.row.n.toLocaleString('id-ID')} (${fmtPct(c.row.n/totalN,1)})</span></div>
+      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span>~${Math.round(c.row.expected).toLocaleString('id-ID')}</span></div>
+      <div class="why">${c.why}</div>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${c.row.tier}')">Lihat Daftar User ID ↑</button>
+    </div>`).join('');
 
   /* ---- 4. Tabel aksi & frekuensi kontak/minggu (ringkas, 1 baris per tier) ---- */
   function weeklyFreq(tier){
