@@ -211,7 +211,13 @@
         <input type="text" id="searchBox" placeholder="Cari Cust ID..." oninput="renderTable()">
         <select id="cohortFilter" onchange="renderTable()"><option value="">Semua Cohort</option></select>
         <select id="monthFilter" onchange="renderTable()"><option value="">Semua Bulan (Created)</option></select>
-        <input type="number" id="minCreatedFilter" placeholder="Min. Total Created" style="width:150px;" min="0" oninput="renderTable()">
+        <select id="deliveredOp" onchange="renderTable()" style="width:60px;">
+          <option value=">">&gt;</option>
+          <option value=">=" selected>&ge;</option>
+          <option value="<">&lt;</option>
+          <option value="<=">&le;</option>
+        </select>
+        <input type="number" id="deliveredValFilter" placeholder="Total Delivered" style="width:150px;" min="0" oninput="renderTable()">
         <button class="ghost" onclick="exportCSV()">Export CSV</button>
         <button onclick="clearSelection()">Tutup</button>
       </div>
@@ -1304,6 +1310,18 @@ function getTotalCreated(custId){
   if(!h) return 0;
   return h.reduce((s,x)=>s+x.created,0);
 }
+function getTotalDelivered(custId){
+  const h = CUST_HISTORY[custId];
+  if(!h) return 0;
+  return h.reduce((s,x)=>s+x.delivered,0);
+}
+function compareOp(a, op, b){
+  if(op==='>') return a > b;
+  if(op==='>=') return a >= b;
+  if(op==='<') return a < b;
+  if(op==='<=') return a <= b;
+  return true;
+}
 function getCreatedMonths(custId){
   const h = CUST_HISTORY[custId];
   if(!h) return [];
@@ -1324,7 +1342,7 @@ function selectTier(tier){
   document.getElementById('searchBox').value = '';
   document.getElementById('cohortFilter').value = '';
   document.getElementById('monthFilter').value = '';
-  document.getElementById('minCreatedFilter').value = '';
+  document.getElementById('deliveredValFilter').value = '';
   renderTable();
 }
 function selectSubtier(sub){
@@ -1344,14 +1362,15 @@ function renderTable(){
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   const cohort = document.getElementById('cohortFilter').value;
   const monthSel = document.getElementById('monthFilter').value;
-  const minCreated = parseInt(document.getElementById('minCreatedFilter').value);
+  const deliveredOp = document.getElementById('deliveredOp').value;
+  const deliveredVal = parseInt(document.getElementById('deliveredValFilter').value);
   const subtierActive = SUBTIER_ENABLED_TIERS.includes(activeTier);
   let rows = DATA.filter(d=>d.tier===activeTier);
   if(cohort) rows = rows.filter(d=>d.seg===cohort);
   if(subtierActive && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   if(monthSel) rows = rows.filter(d=>getCreatedMonths(d.custId).includes(monthSel));
-  if(!isNaN(minCreated)) rows = rows.filter(d=>getTotalCreated(d.custId) >= minCreated);
+  if(!isNaN(deliveredVal)) rows = rows.filter(d=>compareOp(getTotalDelivered(d.custId), deliveredOp, deliveredVal));
   rows.sort((a,b)=>b.prob-a.prob);
 
   const body = document.getElementById('panelBody');
@@ -1399,14 +1418,16 @@ function renderTable(){
   const shown = rows.slice(0, maxShow);
   const showSubCol = subtierActive;
   let html = subtierHtml + `<div class="tbl-wrap"><table><thead><tr>
-    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th><th>Total Created</th><th>Bulan Created</th>
+    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th><th>Total Delivered</th><th>Total Created</th><th>Bulan Created</th>
   </tr></thead><tbody>`;
   shown.forEach(d=>{
     const totalCreated = getTotalCreated(d.custId);
+    const totalDelivered = getTotalDelivered(d.custId);
     const createdMonths = getCreatedMonths(d.custId);
     html += `<tr><td>${d.custId}</td><td>${d.seg}</td><td>${d.eng}</td><td>${fmtPct(d.prob)}</td>
       ${showSubCol?`<td><span class="subtier-pill">${d.subtier}</span></td>`:''}
       <td><span class="tier-pill ${d.tier}">${d.tier}</span></td>
+      <td>${totalDelivered}</td>
       <td>${totalCreated}</td>
       <td>${createdMonths.length?createdMonths.join(', '):'—'}</td></tr>`;
   });
@@ -1426,17 +1447,19 @@ function exportCSV(){
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   const monthSel = document.getElementById('monthFilter').value;
   if(monthSel) rows = rows.filter(d=>getCreatedMonths(d.custId).includes(monthSel));
-  const minCreated = parseInt(document.getElementById('minCreatedFilter').value);
-  if(!isNaN(minCreated)) rows = rows.filter(d=>getTotalCreated(d.custId) >= minCreated);
+  const deliveredOp = document.getElementById('deliveredOp').value;
+  const deliveredVal = parseInt(document.getElementById('deliveredValFilter').value);
+  if(!isNaN(deliveredVal)) rows = rows.filter(d=>compareOp(getTotalDelivered(d.custId), deliveredOp, deliveredVal));
   rows.sort((a,b)=>b.prob-a.prob);
   const showSubCol = SUBTIER_ENABLED_TIERS.includes(activeTier);
-  let csv = showSubCol ? "Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier,Total Created,Bulan Created\n" : "Cust ID,Cohort,Engagement,Propensity Score,Tier,Total Created,Bulan Created\n";
+  let csv = showSubCol ? "Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier,Total Delivered,Total Created,Bulan Created\n" : "Cust ID,Cohort,Engagement,Propensity Score,Tier,Total Delivered,Total Created,Bulan Created\n";
   rows.forEach(d=>{
     const totalCreated = getTotalCreated(d.custId);
+    const totalDelivered = getTotalDelivered(d.custId);
     const createdMonths = getCreatedMonths(d.custId).join('; ');
     csv += showSubCol
-      ? `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.subtier},${d.tier},${totalCreated},"${createdMonths}"\n`
-      : `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier},${totalCreated},"${createdMonths}"\n`;
+      ? `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.subtier},${d.tier},${totalDelivered},${totalCreated},"${createdMonths}"\n`
+      : `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier},${totalDelivered},${totalCreated},"${createdMonths}"\n`;
   });
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
