@@ -1148,7 +1148,17 @@ function renderAnalysis(){
     volWhy = `Rate per-user lebih rendah dari tier di atas, tapi populasinya jauh lebih besar — total peluang konversinya justru paling tinggi. Ini kolam paling layak dapat tambahan budget kalau mau kejar volume.`;
   }
 
-  document.getElementById('priorityGrid').innerHTML = `
+  const mergedCard = sameAsHigh ? `
+    <div class="priority-card role-eff" style="grid-column:span 2;">
+      <div class="rank">#1</div>
+      <div class="role" style="color:var(--high);">Paling Efisien &amp; Volume Terbesar</div>
+      <div class="tier-name">${high.tier} Potential</div>
+      <div class="stat-line"><span class="k">Conversion rate</span><span><b>${fmtPct(high.avgProb)}</b></span></div>
+      <div class="stat-line"><span class="k">Jumlah user</span><span>${high.n.toLocaleString('id-ID')} (${fmtPct(high.n/totalN,1)})</span></div>
+      <div class="stat-line"><span class="k">Perkiraan total konversi</span><span><b>~${Math.round(high.expected).toLocaleString('id-ID')}</b></span></div>
+      <div class="why">Tier ini menang di DUA ukuran sekaligus — cost per-conversion paling rendah (paling efisien per kontak), DAN karena populasinya juga cukup besar, total perkiraan konversinya paling tinggi dibanding tier lain. Ini prioritas utama tanpa perlu trade-off efisiensi vs volume — kejar duluan dan alokasikan budget paling besar ke sini. Tanda tier Medium/Low performanya jauh di bawah ekspektasi, worth dicek kenapa.</div>
+      <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${high.tier}')">Lihat Daftar User ID ↑</button>
+    </div>` : `
     <div class="priority-card role-eff">
       <div class="rank">#1</div>
       <div class="role" style="color:var(--high);">Paling Efisien per Kontak</div>
@@ -1168,7 +1178,9 @@ function renderAnalysis(){
       <div class="stat-line"><span class="k">Conversion rate</span><span>${fmtPct(volRow.avgProb)}</span></div>
       <div class="why">${volWhy}</div>
       <button class="ghost" style="width:100%;margin-top:12px;" onclick="jumpToTier('${volRow.tier}')">Lihat Daftar User ID ↑</button>
-    </div>
+    </div>`;
+
+  document.getElementById('priorityGrid').innerHTML = mergedCard + `
     <div class="priority-card role-avoid">
       <div class="rank">#3</div>
       <div class="role" style="color:var(--low);">Minim Prioritas</div>
