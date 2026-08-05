@@ -317,9 +317,32 @@
     </details>
   </div>
 
+  <div class="analysis-panel" style="border-left:4px solid var(--med);">
+    <h2>⚖️ Catatan Kepatuhan &amp; Responsible Lending</h2>
+    <div class="lead">Khusus buat konteks industri lending — bagian ini bukan tips marketing, tapi batasan yang perlu dipegang.</div>
+    <div class="scenario-grid">
+      <div class="scenario-card">
+        <h4>Skor ini ≠ kelayakan kredit</h4>
+        <p>Propensity score di dashboard ini ngukur <b>kemungkinan seseorang mau apply/submit</b> — BUKAN penilaian kelayakan kredit. Tier "High Potential" artinya "kemungkinan besar merespons &amp; mengajukan", bukan "pasti layak dikasih pinjaman". Keputusan approve/reject tetap harus lewat proses underwriting/credit scoring terpisah — jangan pernah pakai tier di dashboard ini sebagai pengganti proses itu.</p>
+      </div>
+      <div class="scenario-card">
+        <h4>Cap frekuensi = perlindungan, bukan cuma anti-spam</h4>
+        <p>Rekomendasi frekuensi kontak (1-2x/minggu High, dst) yang ada di tabel aksi bukan cuma soal etika campaign — di industri lending ini juga bagian dari <b>mencegah over-solicitation</b> ke orang yang mungkin lagi kesulitan finansial. Jangan naikin frekuensi cuma buat kejar target jangka pendek.</p>
+      </div>
+      <div class="scenario-card">
+        <h4>Konten pesan wajib direview compliance</h4>
+        <p>Rotasi keyword harian di tabel "Rekomendasi Aksi" itu draft angle, bukan copy final siap kirim. Industri lending di Indonesia diatur ketat soal etika komunikasi &amp; penagihan digital oleh OJK — pastikan tim legal/compliance internal review konten sebelum dipakai produksi, terutama kalau institusinya berstatus bank/lembaga keuangan resmi.</p>
+      </div>
+      <div class="scenario-card">
+        <h4>Keterbatasan data yang perlu diinget</h4>
+        <p>Model ini belum punya data <b>histori pembayaran</b> (tepat waktu vs telat) — cuma tau "kapan terakhir lunas", bukan "gimana kualitas bayarnya". Idealnya, sebelum ngejar user buat pinjam lagi, ada sinyal tambahan soal riwayat pembayaran mereka biar gak asal dorong volume tanpa mempertimbangkan risiko gagal bayar berulang.</p>
+      </div>
+    </div>
+  </div>
+
   <div class="foot-panel">
     <b>Metodologi:</b> WOE (Weight of Evidence) binning + Logistic Regression, dilatih dari data historis periode lengkap terakhir yang terdeteksi otomatis dari kolom sheet — model di-retrain otomatis tiap refresh dari data terbaru (lihat "Status Training Model" &amp; "Lihat bukti statistik" di atas untuk detail &amp; drift-nya).
-    Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read).
+    Fitur: (1) Segment/cohort recency berdasarkan hari sejak Paidback Date, (2) tahap engagement terjauh periode berjalan (Sent → Delivered → Read), (3) OCS Score (dibersihkan otomatis dari format campur angka/rentang/tanggal ke-korup, missing dijadiin bucket sendiri).
     Tiga filter bisa di-toggle lewat tombol di header: (1) flag khusus di kolom <code>Noted</code> kalau ada di sheet, (2) user yang gagal delivered 2 periode berturut-turut (Jun &amp; Jul) — indikasi nomor bermasalah, dan (3) user yang sudah <code>Created</code> bulan ini (takeout dari list supaya gak di-follow-up lagi). Ketiganya cuma memengaruhi kartu/tier/daftar User ID yang tampil — training model tetap pakai data lengkap tanpa filter ini. Semua metrik engagement (Sent/Delivered/Read) berasal dari channel WhatsApp saja — rekomendasi di atas spesifik untuk strategi WhatsApp, belum mencakup channel lain.
   </div>
 
@@ -453,7 +476,8 @@ const FREQ_CAP = {High: 2, Medium: 3, Low: 1}; // cap max x/minggu sesuai rekome
 const BASELINE = {
   woeSeg: {">M4": 0.31717, "M0": 0.687949, "M1": -2.096653, "M2": -2.124888, "M3": -1.48922},
   woeEng: {"NotSent": 6.667434, "Sent": 0.26485, "Delivered": -1.251977, "Read": -1.241717},
-  coef: {seg: -0.5029083541937687, eng: -0.7657522377295278},
+  woeOcs: {"Missing": 0, "Low": 0, "Mid": 0, "High": 0}, // gak ada baseline historis buat OCS - netral (kontribusi 0) sampai model beneran retrain dari data asli
+  coef: {seg: -0.5029083541937687, eng: -0.7657522377295278, ocs: 0},
   intercept: -4.666039643347923
 };
 
@@ -477,6 +501,31 @@ function segmentFromDays(days){
 }
 
 // Bangun peta Cust ID -> Paidback Date dari file Eligible (roster kumulatif semua cohort)
+function parseOcsRaw(raw){
+  if(raw===null || raw===undefined) return null;
+  const s = raw.toString().trim();
+  if(s==='') return null;
+  if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  // Rentang "X-Y" (mis. "19-17") - ambil rata-rata sebagai skor tunggal
+  const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/);
+  if(rangeMatch){
+    return (parseInt(rangeMatch[1]) + parseInt(rangeMatch[2])) / 2;
+  }
+  // Ke-korup jadi tanggal oleh Excel/Sheets (mis. "12/1/2019", "2019-12-01") - aslinya rentang
+  // "12-1" (bulan-hari) sebelum ke-convert Excel/Sheets jadi tanggal beneran. Rekonstruksi balik
+  // dari komponen bulan+hari, ambil rata-ratanya - konsisten sama cara rentang teks di atas.
+  const d = new Date(s);
+  if(!isNaN(d) && d.getFullYear() > 1900 && d.getFullYear() < 2100){
+    return (d.getMonth()+1 + d.getDate()) / 2;
+  }
+  return null; // format gak dikenali - dianggap missing, bukan dipaksa jadi 0
+}
+function ocsBucket(score){
+  if(score===null) return 'Missing';
+  if(score < 10) return 'Low';
+  if(score < 18) return 'Mid';
+  return 'High';
+}
 function buildEligibleMap(rows){
   const map = {};
   rows.forEach(r=>{
@@ -485,7 +534,8 @@ function buildEligibleMap(rows){
     const pbStr = (r["Paidback Date"]||"").toString().trim();
     const pbDate = pbStr ? new Date(pbStr) : null;
     if(!pbDate || isNaN(pbDate)) return;
-    map[custId] = pbDate; // kalau ada duplikat Cust ID, yang terakhir menang
+    const ocs = parseOcsRaw(r["OCS Score"]);
+    map[custId] = {pbDate, ocs}; // kalau ada duplikat Cust ID, yang terakhir menang
   });
   return map;
 }
@@ -532,18 +582,19 @@ function processPerMonthTrainingData(monthFiles, allRows, eligibleMap){
       const custId = (r["Cust ID"]||"").toString().trim();
       if(!custId) return;
       recordCustHistory(custId, mf.name, r); // rekam histori mentah - independen dari status eligible
-      const pbDate = eligibleMap[custId];
-      if(!pbDate) return; // gak ketemu Paidback Date-nya (sudah gak eligible lagi) - skip dari training
-      const days = Math.floor((refDate - pbDate) / (1000*60*60*24));
+      const elig = eligibleMap[custId];
+      if(!elig) return; // gak ketemu Paidback Date-nya (sudah gak eligible lagi) - skip dari training
+      const days = Math.floor((refDate - elig.pbDate) / (1000*60*60*24));
       if(days < 0) return;
 
       const seg = segmentFromDays(days);
+      const ocs = ocsBucket(elig.ocs);
       const sent = parseInt(r["Sent"]) || 0;
       const delivered = parseInt(r["Delivered"]) || 0;
       const read = parseInt(r["Read"]) || 0;
       const created = getCreatedFlag(r);
       const eng = engagementStage(sent, delivered, read);
-      const key = seg + "|" + eng;
+      const key = seg + "|" + eng + "|" + ocs;
       if(!comboRaw[key]) comboRaw[key] = {pos:0, neg:0};
       if(created) comboRaw[key].pos++; else comboRaw[key].neg++;
     });
@@ -575,26 +626,45 @@ function comboToFunnel(combo){
 // Dengan cuma 2 prediktor, VIF keduanya identik: 1/(1-r^2), r = korelasi terboboti antar fitur.
 function computeVIF(comboRaw){
   const combos = Object.keys(comboRaw).map(key=>{
-    const [seg, eng] = key.split("|");
+    const [seg, eng, ocs] = key.split("|");
     const n = comboRaw[key].pos + comboRaw[key].neg;
-    return {woeS: ACTIVE.woeSeg[seg] ?? 0, woeE: ACTIVE.woeEng[eng] ?? 0, n};
+    return {woeS: ACTIVE.woeSeg[seg] ?? 0, woeE: ACTIVE.woeEng[eng] ?? 0, woeO: ACTIVE.woeOcs[ocs] ?? 0, n};
   }).filter(c=>c.n>0);
   const totalN = combos.reduce((s,c)=>s+c.n,0);
   if(totalN===0) return null;
-  const meanS = combos.reduce((s,c)=>s+c.woeS*c.n,0)/totalN;
-  const meanE = combos.reduce((s,c)=>s+c.woeE*c.n,0)/totalN;
-  let cov=0, varS=0, varE=0;
-  combos.forEach(c=>{
-    cov += c.n*(c.woeS-meanS)*(c.woeE-meanE);
-    varS += c.n*(c.woeS-meanS)*(c.woeS-meanS);
-    varE += c.n*(c.woeE-meanE)*(c.woeE-meanE);
-  });
-  if(varS===0 || varE===0) return {r:0, vif:1};
-  let r = cov/Math.sqrt(varS*varE);
-  r = Math.max(-1, Math.min(1, r)); // clamp pembulatan floating-point
-  const r2 = r*r;
-  const vif = r2 > 0.999 ? Infinity : 1/(1-r2); // hindari ledakan angka akibat kolinearitas nyaris sempurna / kombinasi data terlalu sedikit
-  return {r, vif};
+
+  function weightedCorr(getA, getB){
+    const meanA = combos.reduce((s,c)=>s+getA(c)*c.n,0)/totalN;
+    const meanB = combos.reduce((s,c)=>s+getB(c)*c.n,0)/totalN;
+    let cov=0, varA=0, varB=0;
+    combos.forEach(c=>{
+      const a=getA(c)-meanA, b=getB(c)-meanB;
+      cov += c.n*a*b; varA += c.n*a*a; varB += c.n*b*b;
+    });
+    if(varA===0 || varB===0) return 0;
+    let r = cov/Math.sqrt(varA*varB);
+    return Math.max(-1, Math.min(1, r));
+  }
+  function toVif(r){
+    const r2 = r*r;
+    return r2 > 0.999 ? Infinity : 1/(1-r2);
+  }
+
+  // 3 fitur -> matriks korelasi berpasangan. VIF EKSAK butuh regresi tiap fitur ke SISANYA
+  // (bukan cuma 1 pasangan) - sebagai pendekatan sederhana yang tetap informatif, VIF per fitur
+  // di sini dihitung dari pasangan dengan |r| PALING TINGGI yang melibatkan fitur itu (worst-case
+  // proxy, bukan VIF regresi penuh - cukup buat deteksi dini kolinearitas serius).
+  const rSegEng = weightedCorr(c=>c.woeS, c=>c.woeE);
+  const rSegOcs = weightedCorr(c=>c.woeS, c=>c.woeO);
+  const rEngOcs = weightedCorr(c=>c.woeE, c=>c.woeO);
+
+  return {
+    pairs: [
+      {a:'Segment', b:'Engagement', r:rSegEng, vif:toVif(rSegEng)},
+      {a:'Segment', b:'OCS', r:rSegOcs, vif:toVif(rSegOcs)},
+      {a:'Engagement', b:'OCS', r:rEngOcs, vif:toVif(rEngOcs)},
+    ]
+  };
 }
 
 function engagementStage(sent, delivered, read){
@@ -623,7 +693,14 @@ const KEYWORD_POOL = [
   "Kebutuhan sekolah anak jangan sampai keteteran — ajukan dari sekarang",
   "Renovasi dapur/kamar mandi yang lama ditunda, sekarang bisa direalisasikan",
   "Kepepet kebutuhan tak terduga? Cair cepat, syarat mudah",
-  "Tambahan modal usaha buat stok/operasional, prosesnya simpel"
+  "Tambahan modal usaha buat stok/operasional, prosesnya simpel",
+  // Tema kepercayaan/legitimasi - penting khusus industri lending, karena banyak calon peminjam
+  // was-was sama pinjol ilegal. Angle ini nurunin friksi psikologis, bukan cuma dorong urgensi.
+  "Pinjaman resmi, diawasi OJK — aman, bukan pinjol ilegal",
+  "Bunga & biaya transparan dari awal, gak ada biaya tersembunyi",
+  "Sudah dipercaya banyak nasabah — proses jelas, bukan janji palsu",
+  "Data kamu aman, sesuai standar keamanan resmi",
+  "Cicilan sesuai kesanggupan — kita bantu kamu pinjam dengan bijak"
 ];
 function getDailyKeyword(offset){
   const now = new Date();
@@ -654,13 +731,14 @@ function assignMediumSubtiers(){
 // per kombinasi Segment x Engagement Jun yang sudah dikelompokkan - jauh lebih ringan & cepat
 // untuk 100rb+ baris, hasilnya matematis identik dengan fit per-baris).
 function retrainModel(comboRaw){
-  const segAgg = {}, engAgg = {};
+  const segAgg = {}, engAgg = {}, ocsAgg = {};
   let totalPos = 0, totalNeg = 0;
   for(const key in comboRaw){
-    const [seg, eng] = key.split("|");
+    const [seg, eng, ocs] = key.split("|");
     const c = comboRaw[key];
     segAgg[seg] = segAgg[seg] || {pos:0,neg:0}; segAgg[seg].pos += c.pos; segAgg[seg].neg += c.neg;
     engAgg[eng] = engAgg[eng] || {pos:0,neg:0}; engAgg[eng].pos += c.pos; engAgg[eng].neg += c.neg;
+    ocsAgg[ocs] = ocsAgg[ocs] || {pos:0,neg:0}; ocsAgg[ocs].pos += c.pos; ocsAgg[ocs].neg += c.neg;
     totalPos += c.pos; totalNeg += c.neg;
   }
   if(totalPos < 30) return null; // data positif terlalu sedikit untuk retrain yang stabil - pakai baseline
@@ -676,26 +754,27 @@ function retrainModel(comboRaw){
   }
   const woeSeg = woeMap(segAgg);
   const woeEng = woeMap(engAgg);
+  const woeOcs = woeMap(ocsAgg);
 
-  // Gradient descent (weighted logistic regression) di atas kombinasi yang sudah dikelompokkan
+  // Gradient descent (weighted logistic regression) di atas kombinasi yang sudah dikelompokkan - 3 fitur
   const combos = Object.keys(comboRaw).map(key=>{
-    const [seg, eng] = key.split("|");
+    const [seg, eng, ocs] = key.split("|");
     const c = comboRaw[key];
-    return {woeS: woeSeg[seg] ?? 0, woeE: woeEng[eng] ?? 0, n: c.pos+c.neg, pos: c.pos};
+    return {woeS: woeSeg[seg] ?? 0, woeE: woeEng[eng] ?? 0, woeO: woeOcs[ocs] ?? 0, n: c.pos+c.neg, pos: c.pos};
   });
   const totalN = totalPos + totalNeg;
-  let b0=0, b1=0, b2=0;
+  let b0=0, b1=0, b2=0, b3=0;
   const lr = 0.5;
   for(let it=0; it<3000; it++){
-    let g0=0, g1=0, g2=0;
+    let g0=0, g1=0, g2=0, g3=0;
     combos.forEach(c=>{
-      const p = sigmoid(b0 + b1*c.woeS + b2*c.woeE);
+      const p = sigmoid(b0 + b1*c.woeS + b2*c.woeE + b3*c.woeO);
       const resid = c.pos - c.n*p;
-      g0 += resid; g1 += c.woeS*resid; g2 += c.woeE*resid;
+      g0 += resid; g1 += c.woeS*resid; g2 += c.woeE*resid; g3 += c.woeO*resid;
     });
-    b0 += lr*g0/totalN; b1 += lr*g1/totalN; b2 += lr*g2/totalN;
+    b0 += lr*g0/totalN; b1 += lr*g1/totalN; b2 += lr*g2/totalN; b3 += lr*g3/totalN;
   }
-  return {woeSeg, woeEng, coef:{seg:b1, eng:b2}, intercept:b0};
+  return {woeSeg, woeEng, woeOcs, coef:{seg:b1, eng:b2, ocs:b3}, intercept:b0};
 }
 
 /* ============== DATA LOAD ============== */
@@ -724,6 +803,7 @@ let CUST_HISTORY = {}; // Cust ID -> [{month, sent, delivered, read, created, so
 let eligibleFile_lastMap = {}; // Cust ID -> Paidback Date, disimpan global buat dipakai fitur validasi
 let DIAG_ELIGIBLE_RAW_ROWS = 0; // jumlah baris mentah yang berhasil di-fetch dari file Eligible (diagnostik konsistensi)
 let DIAG_ELIGIBLE_UNIQUE_IDS = 0; // jumlah Cust ID unik setelah dedup (beda dari raw rows = ada duplikat)
+let DIAG_OCS_WITH_DATA = 0; // berapa Cust ID yang punya OCS Score valid (bukan missing/gak terparse)
 let DIAG_CURRENT_RAW_ROWS = 0; // jumlah baris mentah dari file bulan berjalan
 let CURRENT_CUTOFF_HIGH = null; // nilai propensity score aktual yang jadi batas bawah tier High saat ini
 let CURRENT_CUTOFF_MED = null; // nilai propensity score aktual yang jadi batas bawah tier Medium saat ini
@@ -758,6 +838,7 @@ async function loadData(){
     eligibleFile_lastMap = eligibleMap;
     DIAG_ELIGIBLE_RAW_ROWS = eligibleRows.length;
     DIAG_ELIGIBLE_UNIQUE_IDS = Object.keys(eligibleMap).length;
+    DIAG_OCS_WITH_DATA = Object.values(eligibleMap).filter(e=>e.ocs!==null).length;
 
     DIAG_CURRENT_RAW_ROWS = currentRows ? currentRows.length : 0;
     const currentEngMap = {};
@@ -832,7 +913,7 @@ async function loadData(){
       // positif ke skor). Kalau tandanya kebalik, itu tanda training kena noise/data gak stabil -
       // JANGAN dipakai, mending fallback ke baseline daripada nge-produce hasil yang flip-flop liar.
       let rejectedForSignFlip = false;
-      if(retrained && (retrained.coef.eng >= 0 || retrained.coef.seg >= 0)){
+      if(retrained && (retrained.coef.eng >= 0 || retrained.coef.seg >= 0 || retrained.coef.ocs > 0)){
         retrained = null;
         rejectedForSignFlip = true;
       }
@@ -851,10 +932,11 @@ async function loadData(){
        fallback in-sample kalau cuma ada 1 bulan training) ---- */
     COMBO_JUN = {};
     for(const key in comboRawTest){
-      const [seg, eng] = key.split("|");
+      const [seg, eng, ocs] = key.split("|");
       const woeS = ACTIVE.woeSeg[seg] ?? 0;
       const woeE = ACTIVE.woeEng[eng] ?? 0;
-      const prob = sigmoid(ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE);
+      const woeO = ACTIVE.woeOcs[ocs] ?? 0;
+      const prob = sigmoid(ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE + ACTIVE.coef.ocs*woeO);
       COMBO_JUN[key] = {prob, pos: comboRawTest[key].pos, neg: comboRawTest[key].neg};
     }
 
@@ -862,9 +944,10 @@ async function loadData(){
     const today = new Date();
     const scored = []; // pass A: semua yang lolos filter Created/Undeliverable, sebelum tau tier-nya
     Object.keys(eligibleMap).forEach(custId=>{
-      const pbDate = eligibleMap[custId];
-      const days = Math.floor((today - pbDate) / (1000*60*60*24));
+      const elig = eligibleMap[custId];
+      const days = Math.floor((today - elig.pbDate) / (1000*60*60*24));
       const seg = segmentFromDays(days);
+      const ocs = ocsBucket(elig.ocs);
 
       const eng2 = currentEngMap[custId] || {sent:0, delivered:0, read:0, createdNow:0};
       const sentJul = eng2.sent, deliveredJul = eng2.delivered, readJul = eng2.read;
@@ -880,9 +963,10 @@ async function loadData(){
       const eng = engagementStage(sentJul, deliveredJul, readJul);
       const woeS = ACTIVE.woeSeg[seg] ?? 0;
       const woeE = ACTIVE.woeEng[eng] ?? 0;
-      const z = ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE;
+      const woeO = ACTIVE.woeOcs[ocs] ?? 0;
+      const z = ACTIVE.intercept + ACTIVE.coef.seg*woeS + ACTIVE.coef.eng*woeE + ACTIVE.coef.ocs*woeO;
       const p = sigmoid(z);
-      scored.push({custId, seg, eng, prob: p, sentJul});
+      scored.push({custId, seg, eng, ocs, prob: p, sentJul});
     });
 
     // Cutoff tier berbasis PERSENTIL dari distribusi skor SAAT INI (bukan angka absolut tetap) -
@@ -905,7 +989,7 @@ async function loadData(){
       const estWeeklyRate = s.sentJul / WEEKS_ELAPSED;
       if(FILTER_FREQ_CAP && estWeeklyRate > FREQ_CAP[tier]){ excludedFreqCap++; return; }
 
-      DATA.push({custId: s.custId, seg: s.seg, eng: s.eng, prob: s.prob, tier});
+      DATA.push({custId: s.custId, seg: s.seg, eng: s.eng, ocs: s.ocs, prob: s.prob, tier});
       TIER_STATS[tier].n++;
       TIER_STATS[tier].sumProb += s.prob;
       TIER_STATS[tier].sumSentJul += s.sentJul;
@@ -932,9 +1016,11 @@ function renderSummary(){
   const med = DATA.filter(d=>d.tier==="Medium").length;
   const dupCount = DIAG_ELIGIBLE_RAW_ROWS - DIAG_ELIGIBLE_UNIQUE_IDS;
   const dupNote = dupCount > 0 ? ` (⚠️ ada ${dupCount.toLocaleString('id-ID')} duplikat Cust ID)` : ' (✅ tidak ada duplikat)';
+  const ocsCoveragePct = DIAG_ELIGIBLE_UNIQUE_IDS>0 ? (DIAG_OCS_WITH_DATA/DIAG_ELIGIBLE_UNIQUE_IDS*100).toFixed(1) : '0';
   document.getElementById('diagRow').innerHTML = `
     <span>📄 Baris Eligible: <b>${DIAG_ELIGIBLE_RAW_ROWS.toLocaleString('id-ID')}</b>${dupNote}</span>
     &nbsp;·&nbsp; <span>📆 Bulan berjalan (${CUR_LABEL||'-'}): <b>${DIAG_CURRENT_RAW_ROWS.toLocaleString('id-ID')} baris</b></span>
+    &nbsp;·&nbsp; <span>🧮 OCS Score terbaca: <b>${DIAG_OCS_WITH_DATA.toLocaleString('id-ID')}</b> (${ocsCoveragePct}% dari eligible, sisanya masuk bucket "Missing")</span>
     &nbsp;·&nbsp; <span>🎯 Cutoff — High ≥<b>${CURRENT_CUTOFF_HIGH!==null?fmtPct(CURRENT_CUTOFF_HIGH):'-'}</b>, Medium ≥<b>${CURRENT_CUTOFF_MED!==null?fmtPct(CURRENT_CUTOFF_MED):'-'}</b></span>
     &nbsp;·&nbsp; <span>🧪 Training: <b>${TRAINING_POSITIVE_COUNT.toLocaleString('id-ID')} positif</b> / ${TRAINING_TOTAL_COUNT.toLocaleString('id-ID')} baris</span>`;
 
@@ -1123,7 +1209,8 @@ function renderAnalysis(){
   function pct(x){ return (x*100).toFixed(1)+"%"; }
   const drift = Math.abs(ACTIVE.intercept - BASELINE.intercept) > 0.5
     || Math.abs(ACTIVE.coef.seg - BASELINE.coef.seg) > 0.3
-    || Math.abs(ACTIVE.coef.eng - BASELINE.coef.eng) > 0.3;
+    || Math.abs(ACTIVE.coef.eng - BASELINE.coef.eng) > 0.3
+    || Math.abs(ACTIVE.coef.ocs - BASELINE.coef.ocs) > 0.3;
   const modeTxt = AUTO_RETRAIN
     ? `<b>Mode: Auto-retrain AKTIF.</b> Model dilatih ulang otomatis setiap dashboard di-refresh. Terakhir dilatih: <b>${LAST_TRAINED_AT ? LAST_TRAINED_AT.toLocaleString('id-ID') : '—'}</b>.`
     : `<b>Mode: Bobot tetap (manual).</b> Model TIDAK dilatih ulang otomatis — pakai bobot baseline hasil training awal.`;
@@ -1141,6 +1228,7 @@ function renderAnalysis(){
       <tr><td>Intercept</td><td>${BASELINE.intercept.toFixed(3)}</td><td>${ACTIVE.intercept.toFixed(3)}</td></tr>
       <tr><td>Koefisien Segment</td><td>${BASELINE.coef.seg.toFixed(3)}</td><td>${ACTIVE.coef.seg.toFixed(3)}</td></tr>
       <tr><td>Koefisien Engagement</td><td>${BASELINE.coef.eng.toFixed(3)}</td><td>${ACTIVE.coef.eng.toFixed(3)}</td></tr>
+      <tr><td>Koefisien OCS Score</td><td>${BASELINE.coef.ocs.toFixed(3)}</td><td>${ACTIVE.coef.ocs.toFixed(3)}</td></tr>
     </tbody></table>`;
   document.getElementById('trainingStatusBox').innerHTML = modeTxt + archiveTxt + driftTxt + perbandingan +
     `<div style="margin-top:10px;font-size:11.5px;">ℹ️ File periode terdeteksi otomatis dari folder Drive: <code>${TRAIN_MONTHS_LABEL||'-'}</code> (training) dan <code>${CUR_LABEL||'-'}</code> (scoring/periode berjalan) — dashboard ikutin file apa pun yang ada di folder "Scoring", gak perlu edit kode tiap bulan file baru ditambahkan.</div>`;
@@ -1156,19 +1244,19 @@ function renderAnalysis(){
   /* ---- 0b-ii. Uji multikolinearitas (VIF) ---- */
   const vifBox = document.getElementById('vifInsight');
   if(VIF_RESULT){
-    const {r, vif} = VIF_RESULT;
-    const vifTxt = isFinite(vif) ? vif.toFixed(2) : '∞ (kolinearitas nyaris sempurna)';
+    const {pairs} = VIF_RESULT;
     document.getElementById('vifTable').innerHTML = `<thead><tr>
-        <th>Fitur</th><th>VIF</th><th>Korelasi dengan fitur lain</th>
-      </tr></thead><tbody>
-        <tr><td>WOE Segment</td><td>${vifTxt}</td><td rowspan="2" style="vertical-align:middle;">${r.toFixed(3)}</td></tr>
-        <tr><td>WOE Engagement</td><td>${vifTxt}</td></tr>
-      </tbody>`;
+        <th>Pasangan Fitur</th><th>Korelasi (r)</th><th>VIF (proxy)</th>
+      </tr></thead><tbody>${pairs.map(p=>{
+        const vifTxt = isFinite(p.vif) ? p.vif.toFixed(2) : '∞';
+        return `<tr><td>${p.a} × ${p.b}</td><td>${p.r.toFixed(3)}</td><td>${vifTxt}</td></tr>`;
+      }).join('')}</tbody>`;
+    const maxVif = Math.max(...pairs.map(p=>p.vif));
     let verdict, color;
-    if(!isFinite(vif) || vif >= 10){ verdict = 'Tinggi — kedua fitur kemungkinan besar saling redundan, koefisien model bisa gak stabil. Kalau ini muncul terus-terusan, kemungkinan data training-nya masih terlalu sedikit kombinasi Segment x Engagement yang berbeda.'; color = 'var(--low)'; }
-    else if(vif >= 5){ verdict = 'Sedang — mulai perlu diwaspadai, tapi belum kritis.'; color = 'var(--med)'; }
-    else { verdict = 'Rendah — tidak ada indikasi masalah multikolinearitas.'; color = 'var(--high)'; }
-    vifBox.innerHTML = `<b>VIF (Variance Inflation Factor)</b> = 1/(1-r²) antara kedua fitur (cuma ada 2 prediktor, jadi VIF-nya identik untuk keduanya). Aturan umum: VIF&lt;5 = aman, 5-10 = waspada, &gt;10 = serius. <b style="color:${color};">${verdict}</b>`;
+    if(!isFinite(maxVif) || maxVif >= 10){ verdict = 'Ada pasangan fitur yang kemungkinan besar saling redundan, koefisien model bisa gak stabil. Kalau ini muncul terus-terusan, kemungkinan data training-nya masih terlalu sedikit kombinasi yang berbeda.'; color = 'var(--low)'; }
+    else if(maxVif >= 5){ verdict = 'Ada pasangan yang mulai perlu diwaspadai, tapi belum kritis.'; color = 'var(--med)'; }
+    else { verdict = 'Tidak ada indikasi masalah multikolinearitas serius antar fitur.'; color = 'var(--high)'; }
+    vifBox.innerHTML = `<b>VIF (proxy)</b> = 1/(1-r²) dari korelasi berpasangan (dengan 3 fitur, ini pendekatan sederhana - VIF regresi penuh butuh tiap fitur diregresikan ke KEDUA fitur lain sekaligus, bukan cuma 1 pasangan, jadi anggap angka ini sebagai deteksi dini bukan angka final). Aturan umum: VIF&lt;5 = aman, 5-10 = waspada, &gt;10 = serius. <b style="color:${color};">${verdict}</b>`;
   } else {
     document.getElementById('vifTable').innerHTML = '<tbody><tr><td>Data training belum cukup buat hitung VIF.</td></tr></tbody>';
     vifBox.innerHTML = '';
@@ -1390,11 +1478,11 @@ function renderTable(){
         </div>`;
       }).join('')}</div>
       <div class="insight-box" style="margin-top:10px;">
-        <b>Kenapa masuk ke band Tinggi/Sedang/Rendah?</b> Skor tiap user cuma ditentuin dari 2 hal: <b>Segment/cohort</b> (M0-M4, berdasarkan Paidback Date) dan <b>Engagement periode berjalan</b> (NotSent/Sent/Delivered/Read). Dalam 1 tier (${activeTier}), user dengan kombinasi Segment×Engagement yang skornya di 1/3 TERTINGGI masuk <b>Tinggi</b>, 1/3 TENGAH masuk <b>Sedang</b>, 1/3 TERENDAH masuk <b>Rendah</b> — bukan acak, murni ranking skor.
+        <b>Kenapa masuk ke band Tinggi/Sedang/Rendah?</b> Skor tiap user ditentuin dari 3 hal: <b>Segment/cohort</b> (M0-M4, berdasarkan Paidback Date), <b>Engagement periode berjalan</b> (NotSent/Sent/Delivered/Read), dan <b>OCS Score</b> (Low/Mid/High/Missing kalau datanya kosong). Dalam 1 tier (${activeTier}), user dengan kombinasi ketiganya yang skornya di 1/3 TERTINGGI masuk <b>Tinggi</b>, 1/3 TENGAH masuk <b>Sedang</b>, 1/3 TERENDAH masuk <b>Rendah</b> — bukan acak, murni ranking skor.
         <div style="margin-top:8px;">${bands.map(b=>{
           const combos = {};
           allInTier.filter(d=>d.subtier===b).forEach(d=>{
-            const key = d.seg+' + '+d.eng;
+            const key = d.seg+' + '+d.eng+' + OCS-'+(d.ocs||'?');
             if(!combos[key]) combos[key] = {n:0, prob:d.prob};
             combos[key].n++;
           });
