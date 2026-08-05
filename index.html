@@ -211,6 +211,7 @@
         <input type="text" id="searchBox" placeholder="Cari Cust ID..." oninput="renderTable()">
         <select id="cohortFilter" onchange="renderTable()"><option value="">Semua Cohort</option></select>
         <select id="monthFilter" onchange="renderTable()"><option value="">Semua Bulan (Created)</option></select>
+        <select id="deliveredMonthFilter" onchange="renderTable()"></select>
         <select id="deliveredOp" onchange="renderTable()" style="width:60px;">
           <option value=">">&gt;</option>
           <option value=">=" selected>&ge;</option>
@@ -1380,6 +1381,7 @@ function populateCohortFilter(){
     sel.appendChild(opt);
   });
   populateMonthFilter();
+  populateDeliveredMonthFilter();
 }
 function populateMonthFilter(){
   const sel = document.getElementById('monthFilter');
@@ -1392,6 +1394,30 @@ function populateMonthFilter(){
     sel.appendChild(opt);
   });
   if(months.includes(current)) sel.value = current;
+}
+let DELIVERED_MONTH_INITIALIZED = false; // biar default "bulan berjalan" cuma di-set sekali di load pertama, abis itu ngikutin pilihan user
+function populateDeliveredMonthFilter(){
+  const sel = document.getElementById('deliveredMonthFilter');
+  const current = sel.value;
+  sel.innerHTML = '';
+  const months = [...ARCHIVE_TABS_LOADED, CUR_LABEL].filter(Boolean);
+  months.forEach(m=>{
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = 'Delivered di ' + m;
+    sel.appendChild(opt);
+  });
+  if(months.includes(current)){
+    sel.value = current;
+  } else if(!DELIVERED_MONTH_INITIALIZED && CUR_LABEL){
+    sel.value = CUR_LABEL; // default: bulan berjalan
+    DELIVERED_MONTH_INITIALIZED = true;
+  }
+}
+function getDeliveredInMonth(custId, monthLabel){
+  const h = CUST_HISTORY[custId];
+  if(!h || !monthLabel) return 0;
+  const entry = h.find(x=>x.month===monthLabel);
+  return entry ? entry.delivered : 0;
 }
 function getTotalCreated(custId){
   const h = CUST_HISTORY[custId];
@@ -1450,6 +1476,7 @@ function renderTable(){
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   const cohort = document.getElementById('cohortFilter').value;
   const monthSel = document.getElementById('monthFilter').value;
+  const deliveredMonthSel = document.getElementById('deliveredMonthFilter').value;
   const deliveredOp = document.getElementById('deliveredOp').value;
   const deliveredVal = parseInt(document.getElementById('deliveredValFilter').value);
   const subtierActive = SUBTIER_ENABLED_TIERS.includes(activeTier);
@@ -1458,7 +1485,7 @@ function renderTable(){
   if(subtierActive && activeSubtier) rows = rows.filter(d=>d.subtier===activeSubtier);
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   if(monthSel) rows = rows.filter(d=>getCreatedMonths(d.custId).includes(monthSel));
-  if(!isNaN(deliveredVal)) rows = rows.filter(d=>compareOp(getTotalDelivered(d.custId), deliveredOp, deliveredVal));
+  if(!isNaN(deliveredVal)) rows = rows.filter(d=>compareOp(getDeliveredInMonth(d.custId, deliveredMonthSel), deliveredOp, deliveredVal));
   rows.sort((a,b)=>b.prob-a.prob);
 
   const body = document.getElementById('panelBody');
@@ -1506,16 +1533,16 @@ function renderTable(){
   const shown = rows.slice(0, maxShow);
   const showSubCol = subtierActive;
   let html = subtierHtml + `<div class="tbl-wrap"><table><thead><tr>
-    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th><th>Total Delivered</th><th>Total Created</th><th>Bulan Created</th>
+    <th>Cust ID</th><th>Cohort</th><th>Engagement Saat Ini</th><th>Propensity Score</th>${showSubCol?'<th>Sub-tier</th>':''}<th>Tier</th><th>Delivered di ${deliveredMonthSel||'-'}</th><th>Total Created</th><th>Bulan Created</th>
   </tr></thead><tbody>`;
   shown.forEach(d=>{
     const totalCreated = getTotalCreated(d.custId);
-    const totalDelivered = getTotalDelivered(d.custId);
+    const deliveredInMonth = getDeliveredInMonth(d.custId, deliveredMonthSel);
     const createdMonths = getCreatedMonths(d.custId);
     html += `<tr><td>${d.custId}</td><td>${d.seg}</td><td>${d.eng}</td><td>${fmtPct(d.prob)}</td>
       ${showSubCol?`<td><span class="subtier-pill">${d.subtier}</span></td>`:''}
       <td><span class="tier-pill ${d.tier}">${d.tier}</span></td>
-      <td>${totalDelivered}</td>
+      <td>${deliveredInMonth}</td>
       <td>${totalCreated}</td>
       <td>${createdMonths.length?createdMonths.join(', '):'—'}</td></tr>`;
   });
@@ -1535,19 +1562,20 @@ function exportCSV(){
   if(q) rows = rows.filter(d=>d.custId.toLowerCase().includes(q));
   const monthSel = document.getElementById('monthFilter').value;
   if(monthSel) rows = rows.filter(d=>getCreatedMonths(d.custId).includes(monthSel));
+  const deliveredMonthSel = document.getElementById('deliveredMonthFilter').value;
   const deliveredOp = document.getElementById('deliveredOp').value;
   const deliveredVal = parseInt(document.getElementById('deliveredValFilter').value);
-  if(!isNaN(deliveredVal)) rows = rows.filter(d=>compareOp(getTotalDelivered(d.custId), deliveredOp, deliveredVal));
+  if(!isNaN(deliveredVal)) rows = rows.filter(d=>compareOp(getDeliveredInMonth(d.custId, deliveredMonthSel), deliveredOp, deliveredVal));
   rows.sort((a,b)=>b.prob-a.prob);
   const showSubCol = SUBTIER_ENABLED_TIERS.includes(activeTier);
-  let csv = showSubCol ? "Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier,Total Delivered,Total Created,Bulan Created\n" : "Cust ID,Cohort,Engagement,Propensity Score,Tier,Total Delivered,Total Created,Bulan Created\n";
+  let csv = showSubCol ? `Cust ID,Cohort,Engagement,Propensity Score,Sub-tier,Tier,Delivered di ${deliveredMonthSel},Total Created,Bulan Created\n` : `Cust ID,Cohort,Engagement,Propensity Score,Tier,Delivered di ${deliveredMonthSel},Total Created,Bulan Created\n`;
   rows.forEach(d=>{
     const totalCreated = getTotalCreated(d.custId);
-    const totalDelivered = getTotalDelivered(d.custId);
+    const deliveredInMonth = getDeliveredInMonth(d.custId, deliveredMonthSel);
     const createdMonths = getCreatedMonths(d.custId).join('; ');
     csv += showSubCol
-      ? `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.subtier},${d.tier},${totalDelivered},${totalCreated},"${createdMonths}"\n`
-      : `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier},${totalDelivered},${totalCreated},"${createdMonths}"\n`;
+      ? `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.subtier},${d.tier},${deliveredInMonth},${totalCreated},"${createdMonths}"\n`
+      : `${d.custId},${d.seg},${d.eng},${(d.prob*100).toFixed(2)}%,${d.tier},${deliveredInMonth},${totalCreated},"${createdMonths}"\n`;
   });
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
